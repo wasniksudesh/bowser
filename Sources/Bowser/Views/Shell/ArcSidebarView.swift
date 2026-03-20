@@ -181,9 +181,7 @@ struct ArcSidebarView: View {
     // MARK: - Present Command Bar
 
     private func presentCommandBar() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-            showCommandBar = true
-        }
+        NotificationCenter.default.post(name: .focusAddressBar, object: nil)
     }
 
     // MARK: - Sidebar URL Bar Section

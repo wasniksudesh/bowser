@@ -23,6 +23,7 @@ struct AppShellView: View {
     @Bindable var browserState: BrowserState
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showCommandBar: Bool = false
+    @State private var commandBarInitialText: String = ""
     @State private var isFullScreen: Bool = false
     
     /// Computed binding to convert NavigationSplitViewVisibility to Bool for sidebar toggle
@@ -54,9 +55,9 @@ struct AppShellView: View {
         }
         .coordinateSpace(name: "GlobalShell")
         .overlayPreferenceValue(TabHoverPreferenceKey.self, tabPreviewOverlay)
-        .onReceive(NotificationCenter.default.publisher(for: .openCommandBar)) { _ in presentCommandBar() }
-        .onReceive(NotificationCenter.default.publisher(for: .focusAddressBar)) { _ in presentCommandBar() }
-        .onReceive(NotificationCenter.default.publisher(for: .newTab)) { _ in presentCommandBar() }
+        .onReceive(NotificationCenter.default.publisher(for: .openCommandBar)) { _ in presentCommandBar(initialText: browserState.activeTab?.url.absoluteString ?? "") }
+        .onReceive(NotificationCenter.default.publisher(for: .focusAddressBar)) { _ in presentCommandBar(initialText: browserState.activeTab?.url.absoluteString ?? "") }
+        .onReceive(NotificationCenter.default.publisher(for: .newTab)) { _ in presentCommandBar(initialText: "") }
         .onReceive(fullscreenEnterPublisher) { _ in setFullScreen(true) }
         .onReceive(fullscreenExitPublisher) { _ in setFullScreen(false) }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in setFullScreen(true) }
@@ -143,7 +144,8 @@ struct AppShellView: View {
             CommandBarView(
                 browserState: browserState,
                 onDismiss: { dismissCommandBar() },
-                onNavigate: { url in browserState.createTab(url: url) }
+                onNavigate: { url in browserState.createTab(url: url) },
+                initialText: commandBarInitialText
             )
             .transition(commandBarTransition)
             .zIndex(1000)
@@ -175,7 +177,8 @@ struct AppShellView: View {
     
     // MARK: - Actions
     
-    private func presentCommandBar() {
+    private func presentCommandBar(initialText: String = "") {
+        commandBarInitialText = initialText
         withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
             showCommandBar = true
         }

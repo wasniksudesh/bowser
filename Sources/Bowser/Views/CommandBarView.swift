@@ -71,6 +71,9 @@ struct CommandBarView: View {
     /// Callback when navigation is confirmed (creates tab)
     var onNavigate: (URL) -> Void
 
+    /// Pre-filled text when opened from an existing tab's address bar
+    var initialText: String = ""
+
     /// Search/URL input text
     @State private var searchText: String = ""
 
@@ -194,7 +197,7 @@ struct CommandBarView: View {
             .padding(.bottom, 200)
         }
         .onAppear {
-            // Auto-focus the text field immediately
+            searchText = initialText
             isTextFieldFocused = true
             selectedIndex = -1
         }

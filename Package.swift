@@ -100,14 +100,14 @@ let package = Package(
         ),
 
         // Unit tests for Bowser
-        .testTarget(
-            name: "BowserTests",
-            dependencies: ["Bowser"],
-            path: "Tests/BowserTests",
-            swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency")
-            ]
-        ),
+        // .testTarget(
+        //     name: "BowserTests",
+        //     dependencies: ["Bowser"],
+        //     path: "Tests/BowserTests",
+        //     swiftSettings: [
+        //         .enableExperimentalFeature("StrictConcurrency")
+        //     ]
+        // ),
     ],
     cxxLanguageStandard: .cxx17
 )

@@ -1,0 +1,450 @@
+openapi: 3.0.3
+info:
+  title: TripAdvisor Content API
+  description: OpenAPI Specification for TripAdvisor Content API based on provided request/response samples.
+  version: 1.0.0
+servers:
+  - url: https://api.content.tripadvisor.com/api/v1
+    description: TripAdvisor Content API Server
+
+paths:
+  /location/search:
+    get:
+      summary: Search for locations (hotels, attractions, restaurants)
+      operationId: searchLocations
+      parameters:
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+          description: API Key
+        - name: searchQuery
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The search term (e.g., location name)
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [hotels, attractions, restaurants]
+          description: Category of locations to search for
+        - name: address
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter based on specific address
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+            default: en
+          description: Language for the response
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LocationSummary'
+
+  /location/{locationId}/photos:
+    get:
+      summary: Get photos for a specific location
+      operationId: getLocationPhotos
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier for the location
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+          description: API Key
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+            default: en
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Photo'
+
+  /location/{locationId}/reviews:
+    get:
+      summary: Get reviews for a specific location
+      operationId: getLocationReviews
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier for the location
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+          description: API Key
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+            default: en
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 2
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Review'
+
+  /location/{locationId}/details:
+    get:
+      summary: Get details for a specific location
+      operationId: getLocationDetails
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier for the location
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+          description: API Key
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+            default: en
+        - name: currency
+          in: query
+          required: false
+          schema:
+            type: string
+            default: USD
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationDetails'
+
+components:
+  schemas:
+    Address:
+      type: object
+      properties:
+        street1:
+          type: string
+        street2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        postalcode:
+          type: string
+        address_string:
+          type: string
+
+    LocationSummary:
+      type: object
+      properties:
+        location_id:
+          type: string
+        name:
+          type: string
+        address_obj:
+          $ref: '#/components/schemas/Address'
+
+    ImageVariant:
+      type: object
+      properties:
+        height:
+          type: integer
+        width:
+          type: integer
+        url:
+          type: string
+
+    Images:
+      type: object
+      properties:
+        thumbnail:
+          $ref: '#/components/schemas/ImageVariant'
+        small:
+          $ref: '#/components/schemas/ImageVariant'
+        medium:
+          $ref: '#/components/schemas/ImageVariant'
+        large:
+          $ref: '#/components/schemas/ImageVariant'
+        original:
+          $ref: '#/components/schemas/ImageVariant'
+
+    Photo:
+      type: object
+      properties:
+        id:
+          type: integer
+        is_blessed:
+          type: boolean
+        caption:
+          type: string
+        published_date:
+          type: string
+          format: date-time
+        images:
+          $ref: '#/components/schemas/Images'
+        album:
+          type: string
+        source:
+          type: object
+          properties:
+            name:
+              type: string
+            localized_name:
+              type: string
+        user:
+          type: object
+          properties:
+            username:
+              type: string
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: integer
+        lang:
+          type: string
+        location_id:
+          type: integer
+        published_date:
+          type: string
+          format: date-time
+        rating:
+          type: integer
+        helpful_votes:
+          type: integer
+        rating_image_url:
+          type: string
+        url:
+          type: string
+        text:
+          type: string
+        title:
+          type: string
+        trip_type:
+          type: string
+        travel_date:
+          type: string
+          format: date
+        user:
+          type: object
+          properties:
+            username:
+              type: string
+            user_location:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+            avatar:
+              $ref: '#/components/schemas/Images'
+        subratings:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              name:
+                type: string
+              rating_image_url:
+                type: string
+              value:
+                type: number
+              localized_name:
+                type: string
+
+    LocationDetails:
+      type: object
+      properties:
+        location_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        web_url:
+          type: string
+        address_obj:
+          $ref: '#/components/schemas/Address'
+        ancestors:
+          type: array
+          items:
+            type: object
+            properties:
+              level:
+                type: string
+              name:
+                type: string
+              location_id:
+                type: string
+        latitude:
+          type: string
+        longitude:
+          type: string
+        timezone:
+          type: string
+        write_review:
+          type: string
+        ranking_data:
+          type: object
+          properties:
+            geo_location_id:
+              type: string
+            ranking_string:
+              type: string
+            geo_location_name:
+              type: string
+            ranking_out_of:
+              type: string
+            ranking:
+              type: string
+        rating:
+          type: string
+        rating_image_url:
+          type: string
+        num_reviews:
+          type: string
+        review_rating_count:
+          type: object
+          additionalProperties:
+            type: string
+        subratings:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              name:
+                type: string
+              localized_name:
+                type: string
+              rating_image_url:
+                type: string
+              value:
+                type: string
+        photo_count:
+          type: string
+        see_all_photos:
+          type: string
+        price_level:
+          type: string
+        amenities:
+          type: array
+          items:
+            type: string
+        category:
+          type: object
+          properties:
+            name:
+              type: string
+            localized_name:
+              type: string
+        subcategory:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              localized_name:
+                type: string
+        styles:
+          type: array
+          items:
+            type: string
+        neighborhood_info:
+          type: array
+          items:
+            type: object
+        trip_types:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              localized_name:
+                type: string
+              value:
+                type: string
+        awards:
+          type: array
+          items:
+            type: object

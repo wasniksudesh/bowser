@@ -1,0 +1,1 @@
+"""Bowser Sidecar Application Package"""

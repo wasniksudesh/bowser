@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Highlights Tab Component",
+  "description": "Tabbed interface showing highlights by category",
+  "type": "object",
+  "required": ["tabs"],
+  "properties": {
+    "sectionTitle": {
+      "type": "string",
+      "description": "Dynamic section title based on context (e.g., 'Highlights by Destination', 'Highlights by Brand', 'Top Categories')"
+    },
+    "tabs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "description", "spots"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique tab identifier (e.g., 'matera', 'mostar')"
+          },
+          "title": {
+            "type": "string",
+            "description": "Tab title displayed to user"
+          },
+          "description": {
+            "type": "string",
+            "description": "Tab description/summary"
+          },
+          "spots": {
+            "type": "array",
+            "description": "List of spots/locations for this tab",
+            "items": {
+              "type": "object",
+              "required": ["name", "description"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Spot name"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Brief description"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "URL to open when spot is clicked (optional, but STRONGLY RECOMMENDED)"
+                }
+              },
+              "additionalProperties": false
+            },
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "example": {
+    "sectionTitle": "Highlights by Destination",
+    "tabs": [
+      {
+        "id": "matera",
+        "title": "Matera",
+        "description": "Ancient cave dwellings and rock churches",
+        "spots": [
+          {
+            "name": "Sassi di Matera",
+            "description": "UNESCO-listed cave districts"
+          },
+          {
+            "name": "Casa Grotta",
+            "description": "Restored cave home museum"
+          }
+        ]
+      },
+      {
+        "id": "mostar",
+        "title": "Mostar",
+        "description": "Iconic Ottoman bridge and Balkan cuisine",
+        "spots": [
+          {
+            "name": "Stari Most",
+            "description": "Historic bridge with cliff divers"
+          }
+        ]
+      }
+    ]
+  }
+}

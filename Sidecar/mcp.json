@@ -1,0 +1,16 @@
+{
+  "servers": [
+    // {
+    //   "id": "metrics",
+    //   "endpoint": "http://localhost:7001"
+    // },
+    // {
+    //   "id": "logs",
+    //   "endpoint": "http://localhost:7002"
+    // },
+    // {
+    //   "id": "db",
+    //   "endpoint": "http://localhost:7003"
+    // }
+  ]
+}

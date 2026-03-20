@@ -1,0 +1,711 @@
+APIKEY = xxxx
+LocationID (MANALI HOTEL) = 1152208
+
+### SEARCH API 
+
+#### ATTRACTIONS
+curl --request GET \
+     --url 'https://api.content.tripadvisor.com/api/v1/location/search?key=xxxx&searchQuery=Manali&category=attractions&language=en' \
+     --header 'accept: application/json'
+
+  {
+    "data": [
+      {
+        "location_id": "17441169",
+        "name": "Manali Sanctuary",
+        "address_obj": {
+          "street1": "Circuit House Marg",
+          "city": "Manali",
+          "country": "India",
+          "postalcode": "175131",
+          "address_string": "Circuit House Marg, Manali 175131 India"
+        }
+      },
+      {
+        "location_id": "13392624",
+        "name": "Scooter Rentals Manali",
+        "address_obj": {
+          "street1": "30, Down town Shopping complex, Near State Bank of India, Mall Rd",
+          "city": "Manali",
+          "country": "India",
+          "postalcode": "175131",
+          "address_string": "30, Down town Shopping complex, Near State Bank of India, Mall Rd, Manali 175131 India"
+        }
+      },
+      {
+        "location_id": "12391879",
+        "name": "Kullu Manali Packages",
+        "address_obj": {
+          "street1": "Old Manali Near Hotel Dream River Manu Temple",
+          "city": "Manali",
+          "country": "India",
+          "postalcode": "175131",
+          "address_string": "Old Manali Near Hotel Dream River Manu Temple, Manali 175131 India"
+        }
+      },
+      {
+        "location_id": "10782632",
+        "name": "Leh–Manali Highway",
+        "address_obj": {
+          "city": "Jammu City",
+          "state": "Jammu and Kashmir",
+          "country": "India",
+          "address_string": "Jammu City India"
+        }
+      },
+      {
+        "location_id": "4351965",
+        "name": "Himvalley Manali Amusement & Culture Park",
+        "address_obj": {
+          "street1": "Rohtang Road",
+          "street2": "3 kms from Manali Mall Road",
+          "city": "Manali",
+          "country": "India",
+          "address_string": "Rohtang Road 3 kms from Manali Mall Road, Manali India"
+        }
+      },
+      {
+        "location_id": "13803811",
+        "name": "Manali Igloo Stay",
+        "address_obj": {
+          "street1": "Kullu - Naggar - Manali Rd",
+          "street2": "Keylinga Inn Prini",
+          "city": "Manali",
+          "country": "India",
+          "postalcode": "175131",
+          "address_string": "Kullu - Naggar - Manali Rd Keylinga Inn Prini, Manali 175131 India"
+        }
+      },
+      {
+        "location_id": "23665627",
+        "name": "Madventures by Madpackers (Manali Chapter)",
+        "address_obj": {
+          "street1": "29/2, Vijay Enclave, Palam Dabri Road",
+          "city": "Manali",
+          "country": "India",
+          "postalcode": "110049",
+          "address_string": "29/2, Vijay Enclave, Palam Dabri Road, Manali 110049 India"
+        }
+      },
+      {
+        "location_id": "16805761",
+        "name": "Manali Tour And Travels",
+        "address_obj": {
+          "street1": "Shop no. 15a, Mall road",
+          "city": "Manali",
+          "country": "India",
+          "postalcode": "175131",
+          "address_string": "Shop no. 15a, Mall road, Manali 175131 India"
+        }
+      },
+      {
+        "location_id": "17548591",
+        "name": "Manali Adventure",
+        "address_obj": {
+          "street1": "Raison",
+          "street2": "Raison meadows",
+          "city": "Manali",
+          "country": "India",
+          "postalcode": "175128",
+          "address_string": "Raison Raison meadows, Manali 175128 India"
+        }
+      },
+      {
+        "location_id": "15071658",
+        "name": "Bike on Hire Manali",
+        "address_obj": {
+          "street1": "Rohtang Road",
+          "street2": "Bajaj Service Station, Opposite Beas Bridge, Tebtean Coloney",
+          "city": "Manali",
+          "country": "India",
+          "postalcode": "175131",
+          "address_string": "Rohtang Road Bajaj Service Station, Opposite Beas Bridge, Tebtean Coloney, Manali 175131 India"
+        }
+      }
+    ]
+  }%
+(get the location_id from above response)
+
+#### HOTELS
+curl --request GET \
+     --url 'https://api.content.tripadvisor.com/api/v1/location/search?key=XXX&searchQuery=Manali&category=hotels&language=en' \
+     --header 'accept: application/json'
+
+#### HOTELs based on Address
+curl --request GET \
+     --url 'https://api.content.tripadvisor.com/api/v1/location/search?key=xxxx&searchQuery=Manali&category=attractions&address=Circuit%20House&language=en' \
+     --header 'accept: application/json'
+(gives two results)
+
+
+### LOCATION DETAILS (for a specific location-id)
+
+#### PHOTOs
+curl --request GET \
+     --url 'https://api.content.tripadvisor.com/api/v1/location/1152208/photos?language=en&limit=10&offset=1&key=xxxx' \
+     --header 'accept: application/json'
+
+  {
+    "data": [
+      {
+        "id": 466810201,
+        "is_blessed": false,
+        "caption": "Facade- Pool side view evening shot ",
+        "published_date": "2020-08-21T03:46:20.766Z",
+        "images": {
+          "thumbnail": {
+            "height": 50,
+            "width": 50,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-t/1b/d2/f5/59/piccadily-manali.jpg"
+          },
+          "small": {
+            "height": 150,
+            "width": 150,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-l/1b/d2/f5/59/piccadily-manali.jpg"
+          },
+          "medium": {
+            "height": 146,
+            "width": 250,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-f/1b/d2/f5/59/piccadily-manali.jpg"
+          },
+          "large": {
+            "height": 321,
+            "width": 550,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-s/1b/d2/f5/59/piccadily-manali.jpg"
+          },
+          "original": {
+            "height": 748,
+            "width": 1280,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-o/1b/d2/f5/59/piccadily-manali.jpg"
+          }
+        },
+        "album": "Pool/Beach Area",
+        "source": {
+          "name": "Management",
+          "localized_name": "Management"
+        },
+        "user": {
+          "username": "Management"
+        }
+      },
+      {
+        "id": 466564530,
+        "is_blessed": false,
+        "caption": "Facade",
+        "published_date": "2020-08-19T10:41:36.732Z",
+        "images": {
+          "thumbnail": {
+            "height": 50,
+            "width": 50,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-t/1b/cf/35/b2/facade.jpg"
+          },
+          "small": {
+            "height": 150,
+            "width": 150,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-l/1b/cf/35/b2/facade.jpg"
+          },
+          "medium": {
+            "height": 166,
+            "width": 250,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-f/1b/cf/35/b2/facade.jpg"
+          },
+          "large": {
+            "height": 366,
+            "width": 550,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-s/1b/cf/35/b2/facade.jpg"
+          },
+          "original": {
+            "height": 852,
+            "width": 1280,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-o/1b/cf/35/b2/facade.jpg"
+          }
+        },
+        "album": "Other",
+        "source": {
+          "name": "Management",
+          "localized_name": "Management"
+        },
+        "user": {
+          "username": "Management"
+        }
+      },
+      {
+        "id": 466305636,
+        "is_blessed": false,
+        "caption": "Lobby",
+        "published_date": "2020-08-17T13:17:28.959Z",
+        "images": {
+          "thumbnail": {
+            "height": 50,
+            "width": 50,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-t/1b/cb/42/64/piccadily-manali.jpg"
+          },
+          "small": {
+            "height": 150,
+            "width": 150,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-l/1b/cb/42/64/piccadily-manali.jpg"
+          },
+          "medium": {
+            "height": 167,
+            "width": 250,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-f/1b/cb/42/64/piccadily-manali.jpg"
+          },
+          "large": {
+            "height": 367,
+            "width": 550,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-s/1b/cb/42/64/piccadily-manali.jpg"
+          },
+          "original": {
+            "height": 853,
+            "width": 1280,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-m/1280/1b/cb/42/64/piccadily-manali.jpg"
+          }
+        },
+        "album": "Business Center/Function Rooms",
+        "source": {
+          "name": "Management",
+          "localized_name": "Management"
+        },
+        "user": {
+          "username": "Management"
+        }
+      },
+      {
+        "id": 466812327,
+        "is_blessed": false,
+        "caption": "Lobby",
+        "published_date": "2020-08-21T04:58:14.035Z",
+        "images": {
+          "thumbnail": {
+            "height": 50,
+            "width": 50,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-t/1b/d2/fd/a7/lobby.jpg"
+          },
+          "small": {
+            "height": 150,
+            "width": 150,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-l/1b/d2/fd/a7/lobby.jpg"
+          },
+          "medium": {
+            "height": 167,
+            "width": 250,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-f/1b/d2/fd/a7/lobby.jpg"
+          },
+          "large": {
+            "height": 367,
+            "width": 550,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-s/1b/d2/fd/a7/lobby.jpg"
+          },
+          "original": {
+            "height": 853,
+            "width": 1280,
+            "url": "https://media-cdn.tripadvisor.com/media/photo-m/1280/1b/d2/fd/a7/lobby.jpg"
+          }
+        },
+        "album": "Other",
+        "source": {
+          "name": "Management",
+          "localized_name": "Management"
+        },
+        "user": {
+          "username": "Management"
+        }
+      }
+    ]
+  }%
+
+#### REVIEWS
+curl --request GET \
+     --url 'https://api.content.tripadvisor.com/api/v1/location/1152208/reviews?language=en&limit=10&offset=2&key=xxxx' \
+     --header 'accept: application/json'
+
+  {
+    "data": [
+      {
+        "id": 952826162,
+        "lang": "en",
+        "location_id": 1152208,
+        "published_date": "2024-05-29T03:31:56Z",
+        "rating": 5,
+        "helpful_votes": 0,
+        "rating_image_url": "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/s5.0-66827-5.svg",
+        "url": "https://www.tripadvisor.com/ShowUserReviews-g297618-d1152208-r952826162-Reviews-Piccadily_Manali-Manali_Kullu_District_Himachal_Pradesh.html?m=66827#review952826162",
+        "text": "Great hotel under the leadership of Mr Chauhan . The services were excellent food was great and nice rooms. One can get a true essence of the Himachal feel as the hotel is  offering service since more than two decades with all the modern amenities.\nKudos to team Piccadily Manali …",
+        "title": "Still the best in Manali",
+        "trip_type": "Family",
+        "travel_date": "2024-05-31",
+        "user": {
+          "username": "Neer006",
+          "user_location": {
+            "id": "304555",
+            "name": "Jaipur, Jaipur District, Rajasthan"
+          },
+          "avatar": {
+            "thumbnail": "https://media-cdn.tripadvisor.com/media/photo-t/32/43/e3/b9/neer006.jpg",
+            "small": "https://media-cdn.tripadvisor.com/media/photo-l/32/43/e3/b9/neer006.jpg",
+            "medium": "https://media-cdn.tripadvisor.com/media/photo-f/32/43/e3/b9/neer006.jpg",
+            "large": "https://media-cdn.tripadvisor.com/media/photo-p/32/43/e3/b9/neer006.jpg",
+            "original": "https://media-cdn.tripadvisor.com/media/photo-o/32/43/e3/b9/neer006.jpg"
+          }
+        },
+        "subratings": {}
+      },
+      {
+        "id": 948244942,
+        "lang": "en",
+        "location_id": 1152208,
+        "published_date": "2024-04-25T12:41:30Z",
+        "rating": 5,
+        "helpful_votes": 0,
+        "rating_image_url": "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/s5.0-66827-5.svg",
+        "url": "https://www.tripadvisor.com/ShowUserReviews-g297618-d1152208-r948244942-Reviews-Piccadily_Manali-Manali_Kullu_District_Himachal_Pradesh.html?m=66827#review948244942",
+        "text": "The experience has been beyond expectations. Best property to avail and walking distance to Mall Road. From the hotel management to housekeeping very well manared and extremely courteous. Food in hotel is exceptional - l would say luxury home cooked food. The best was 24/7 kitchen. Late night craving just dial the room service. We had put in at Room No 207 and the balcony view was mesmerizing. \nDo not go by NEGATIVE reviews. The property has been well renovated few years back. Hotel is very nearby to Manali Bus-stand.\nLastly I will strongly recommend for this property. Attaching property pictures for reference.\nBEST MONTH TO VISIT IS MAY & JUNE...Also to enjoy snowfall the months are NOV, DEC & JAN.\nRegards Himanshu.",
+        "title": "Best Stay At Mall Road Manali!",
+        "trip_type": "Couples",
+        "travel_date": "2024-04-30",
+        "user": {
+          "username": "HimanshuKumar1980",
+          "user_location": {
+            "id": "677469",
+            "name": "Faridabad, Faridabad District, Haryana"
+          },
+          "avatar": {
+            "thumbnail": "https://media-cdn.tripadvisor.com/media/photo-t/1a/f6/f0/9f/default-avatar-2020-16.jpg",
+            "small": "https://media-cdn.tripadvisor.com/media/photo-l/1a/f6/f0/9f/default-avatar-2020-16.jpg",
+            "medium": "https://media-cdn.tripadvisor.com/media/photo-f/1a/f6/f0/9f/default-avatar-2020-16.jpg",
+            "large": "https://media-cdn.tripadvisor.com/media/photo-p/1a/f6/f0/9f/default-avatar-2020-16.jpg",
+            "original": "https://media-cdn.tripadvisor.com/media/photo-o/1a/f6/f0/9f/default-avatar-2020-16.jpg"
+          }
+        },
+        "subratings": {
+          "0": {
+            "name": "RATE_VALUE",
+            "rating_image_url": "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/s5.0-66827-5.svg",
+            "value": 5,
+            "localized_name": "Value"
+          },
+          "1": {
+            "name": "RATE_ROOM",
+            "rating_image_url": "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/s5.0-66827-5.svg",
+            "value": 5,
+            "localized_name": "Rooms"
+          },
+          "2": {
+            "name": "RATE_LOCATION",
+            "rating_image_url": "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/s5.0-66827-5.svg",
+            "value": 5,
+            "localized_name": "Location"
+          },
+          "3": {
+            "name": "RATE_CLEANLINESS",
+            "rating_image_url": "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/s5.0-66827-5.svg",
+            "value": 5,
+            "localized_name": "Cleanliness"
+          },
+          "4": {
+            "name": "RATE_SERVICE",
+            "rating_image_url": "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/s5.0-66827-5.svg",
+            "value": 5,
+            "localized_name": "Service"
+          },
+          "5": {
+            "name": "RATE_SLEEP",
+            "rating_image_url": "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/s5.0-66827-5.svg",
+            "value": 5,
+            "localized_name": "Sleep Quality"
+          }
+        }
+      },
+      {
+        "id": 939934773,
+        "lang": "en",
+        "location_id": 1152208,
+        "published_date": "2024-02-27T01:07:49Z",
+        "rating": 5,
+        "helpful_votes": 0,
+        "rating_image_url": "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/s5.0-66827-5.svg",
+        "url": "https://www.tripadvisor.com/ShowUserReviews-g297618-d1152208-r939934773-Reviews-Piccadily_Manali-Manali_Kullu_District_Himachal_Pradesh.html?m=66827#review939934773",
+        "text": "Guys who are going to visit manali ..do a thought of staying here.. 🙏🙏🤗🤗\nStaff is fabulous and really helpfu😍😍😊😊l. .\nCleanliness is top class..😍😍😍😍😍😍😍\nI want to visit again here..🥰🥰 and i will definetly stay here 💛💛💛💛",
+        "title": "Fun time",
+        "trip_type": "Couples",
+        "travel_date": "2024-02-29",
+        "user": {
+          "username": "Road39848906374",
+          "user_location": {
+            "id": "12375742",
+            "name": "Gurgaon District, Haryana"
+          },
+          "avatar": {
+            "thumbnail": "https://media-cdn.tripadvisor.com/media/photo-t/1a/f6/f3/23/default-avatar-2020-28.jpg",
+            "small": "https://media-cdn.tripadvisor.com/media/photo-l/1a/f6/f3/23/default-avatar-2020-28.jpg",
+            "medium": "https://media-cdn.tripadvisor.com/media/photo-f/1a/f6/f3/23/default-avatar-2020-28.jpg",
+            "large": "https://media-cdn.tripadvisor.com/media/photo-p/1a/f6/f3/23/default-avatar-2020-28.jpg",
+            "original": "https://media-cdn.tripadvisor.com/media/photo-o/1a/f6/f3/23/default-avatar-2020-28.jpg"
+          }
+        },
+        "subratings": {}
+      }
+    ]
+  }%
+
+#### DETAILS
+curl --request GET \
+     --url 'https://api.content.tripadvisor.com/api/v1/location/1152208/details?language=en&currency=USD&key=xxxx' \
+     --header 'accept: application/json'
+
+  {
+    "location_id": "1152208",
+    "name": "Piccadily Manali",
+    "description": "Manali - A beautiful town sprawling with lush green sceneries, is the ideal destination for a vacation. Offering both adventure and postcard views, Manali is the perfect choice for families and couples alike. Located in the valley, Piccadily is a premium luxury hotel that holds a prestigious designation in the hospitality industry. Piccadily Manali is part of The Piccadily Holiday Resorts Limited, a luxury hotel chain in India. If you are looking for an unforgettable vacation in Manali, we at The Piccadily offer you our best services to make your stay spectacular. Our hotel is near all the major tourist destinations in Manali. The heart of the city, Mall Road is merely 400 meters away from us. Being in close proximity to all nearby travel hubs coupled with our impeccable hospitality, Piccadily makes an ideal stay in Manali.",
+    "web_url": "https://www.tripadvisor.com/Hotel_Review-g297618-d1152208-Reviews-Piccadily_Manali-Manali_Kullu_District_Himachal_Pradesh.html?m=66827",
+    "address_obj": {
+      "street1": "Mall Road",
+      "city": "Manali",
+      "country": "India",
+      "postalcode": "175131",
+      "address_string": "Mall Road, Manali 175131 India"
+    },
+    "ancestors": [
+      {
+        "level": "Municipality",
+        "name": "Manali",
+        "location_id": "297618"
+      },
+      {
+        "level": "District",
+        "name": "Kullu District",
+        "location_id": "10687724"
+      },
+      {
+        "level": "Region",
+        "name": "Himachal Pradesh",
+        "location_id": "297617"
+      },
+      {
+        "level": "Country",
+        "name": "India",
+        "location_id": "293860"
+      }
+    ],
+    "latitude": "32.23969",
+    "longitude": "77.188225",
+    "timezone": "Asia/Kolkata",
+    "write_review": "https://www.tripadvisor.com/UserReview-g297618-d1152208-Piccadily_Manali-Manali_Kullu_District_Himachal_Pradesh.html?m=66827",
+    "ranking_data": {
+      "geo_location_id": "297618",
+      "ranking_string": "#105 of 941 hotels in Manali",
+      "geo_location_name": "Manali",
+      "ranking_out_of": "941",
+      "ranking": "105"
+    },
+    "rating": "3.5",
+    "rating_image_url": "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/3.5-66827-5.svg",
+    "num_reviews": "180",
+    "review_rating_count": {
+      "1": "27",
+      "2": "20",
+      "3": "26",
+      "4": "44",
+      "5": "63"
+    },
+    "subratings": {
+      "0": {
+        "name": "rate_location",
+        "localized_name": "Location",
+        "rating_image_url": "https://static.tacdn.com/img2/ratings/traveler/ss4.5.svg",
+        "value": "4.4"
+      },
+      "1": {
+        "name": "rate_sleep",
+        "localized_name": "Sleep Quality",
+        "rating_image_url": "https://static.tacdn.com/img2/ratings/traveler/ss3.5.svg",
+        "value": "3.5"
+      },
+      "2": {
+        "name": "rate_room",
+        "localized_name": "Rooms",
+        "rating_image_url": "https://static.tacdn.com/img2/ratings/traveler/ss4.0.svg",
+        "value": "3.8"
+      },
+      "3": {
+        "name": "rate_service",
+        "localized_name": "Service",
+        "rating_image_url": "https://static.tacdn.com/img2/ratings/traveler/ss3.5.svg",
+        "value": "3.3"
+      },
+      "4": {
+        "name": "rate_value",
+        "localized_name": "Value",
+        "rating_image_url": "https://static.tacdn.com/img2/ratings/traveler/ss3.0.svg",
+        "value": "3.2"
+      },
+      "5": {
+        "name": "rate_cleanliness",
+        "localized_name": "Cleanliness",
+        "rating_image_url": "https://static.tacdn.com/img2/ratings/traveler/ss3.5.svg",
+        "value": "3.4"
+      }
+    },
+    "photo_count": "117",
+    "see_all_photos": "https://www.tripadvisor.com/Hotel_Review-g297618-d1152208-m66827-Reviews-Piccadily_Manali-Manali_Kullu_District_Himachal_Pradesh.html#photos",
+    "price_level": "$",
+    "amenities": [
+      "Pool",
+      "Restaurant",
+      "Room service",
+      "Free parking",
+      "Fitness center",
+      "Suites",
+      "Bar/Lounge",
+      "Spa",
+      "Safe",
+      "Flatscreen TV",
+      "Breakfast Buffet",
+      "Hindi",
+      "Internet",
+      "Free Internet",
+      "Wheelchair access",
+      "Wifi",
+      "Free Wifi",
+      "Breakfast included",
+      "Dry Cleaning",
+      "Meeting rooms",
+      "Non-smoking rooms",
+      "Tennis Court",
+      "Laundry Service",
+      "Concierge",
+      "Banquet Room",
+      "Family Rooms",
+      "Refrigerator in room",
+      "Minibar",
+      "Conference Facilities",
+      "Non-smoking hotel",
+      "Water Park",
+      "Poolside Bar",
+      "Private Balcony",
+      "Outdoor pool",
+      "Breakfast Available",
+      "Housekeeping",
+      "Sauna",
+      "Baggage Storage",
+      "Bath / Shower",
+      "Bicycle Rental",
+      "Bicycle Tours",
+      "Bicycles Available",
+      "Blackout Curtains",
+      "Boating",
+      "Body Wrap",
+      "Bottled Water",
+      "Breakfast in the Room",
+      "Car Hire",
+      "24-Hour Check-in",
+      "Express Check-in / Check-out",
+      "Clothes Dryer",
+      "Clothes Rack",
+      "Coffee Shop",
+      "Coffee / Tea Maker",
+      "Couples Massage",
+      "Darts",
+      "Electric Kettle",
+      "English",
+      "Extra Long Beds",
+      "Facial Treatments",
+      "First Aid Kit",
+      "Fitness / Spa Locker Rooms",
+      "Foot Bath",
+      "Foot Massage",
+      "Complimentary Toiletries",
+      "Complimentary Welcome Drink",
+      "24-Hour Front Desk",
+      "Full Body Massage",
+      "Game Room",
+      "Gift Shop",
+      "Hair Dryer",
+      "Hand Massage",
+      "Head Massage",
+      "Hiking",
+      "Horseback Riding",
+      "Iron",
+      "Ironing Service",
+      "Manicure",
+      "Massage",
+      "Mountain View",
+      "Neck Massage",
+      "Newspaper",
+      "Nightclub / DJ",
+      "Outdoor Dining Area",
+      "Outdoor Furniture",
+      "Pedicure",
+      "Picnic Area",
+      "Pool View",
+      "Pool with View",
+      "Private Bathrooms",
+      "Salon",
+      "Seating Area",
+      "24-Hour Security",
+      "Secured Parking",
+      "Separate Dining Area",
+      "Separate Living Room",
+      "Shoeshine",
+      "Skiing",
+      "Ski Rentals",
+      "Snack Bar",
+      "Sofa",
+      "Special Diet Menus",
+      "Steam Room",
+      "Table Tennis",
+      "Taxi Service",
+      "Telephone",
+      "Tile / Marble Floor",
+      "Umbrella",
+      "Valet Parking",
+      "Wake Up Service / Alarm Clock",
+      "Wardrobe / Closet",
+      "Washing Machine",
+      "Water Sport Equipment Rentals",
+      "Wine / Champagne"
+    ],
+    "category": {
+      "name": "hotel",
+      "localized_name": "Hotel"
+    },
+    "subcategory": [
+      {
+        "name": "hotel",
+        "localized_name": "Hotel"
+      }
+    ],
+    "styles": [
+      "Romantic",
+      "Business"
+    ],
+    "neighborhood_info": [],
+    "trip_types": [
+      {
+        "name": "business",
+        "localized_name": "Business",
+        "value": "3"
+      },
+      {
+        "name": "couples",
+        "localized_name": "Couples",
+        "value": "47"
+      },
+      {
+        "name": "solo",
+        "localized_name": "Solo travel",
+        "value": "7"
+      },
+      {
+        "name": "family",
+        "localized_name": "Family",
+        "value": "86"
+      },
+      {
+        "name": "friends",
+        "localized_name": "Friends getaway",
+        "value": "22"
+      }
+    ],
+    "awards": []
+  }%

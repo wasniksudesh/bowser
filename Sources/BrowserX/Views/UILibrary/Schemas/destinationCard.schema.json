@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Destination Card Component",
+  "description": "Compact card for displaying destination information",
+  "type": "object",
+  "required": ["title", "subtitle", "badge", "badgeLabel"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Destination name (e.g., 'Matera')"
+    },
+    "subtitle": {
+      "type": "string",
+      "description": "Location and brief descriptor (e.g., 'Italy · Cave city')"
+    },
+    "badge": {
+      "type": "string",
+      "description": "Duration or highlight (e.g., '2-3 days')"
+    },
+    "badgeLabel": {
+      "type": "string",
+      "description": "Label for the badge (e.g., 'Ideal stay', 'Duration')"
+    }
+  },
+  "additionalProperties": false,
+  "example": {
+    "title": "Matera",
+    "subtitle": "Italy · Cave city",
+    "badge": "2-3 days",
+    "badgeLabel": "Ideal stay"
+  }
+}

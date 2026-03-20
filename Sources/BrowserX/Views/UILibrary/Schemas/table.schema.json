@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Table Component",
+  "description": "Sortable table for displaying structured data",
+  "type": "object",
+  "required": ["columns", "rows"],
+  "properties": {
+    "columns": {
+      "type": "array",
+      "description": "Table column definitions",
+      "items": {
+        "type": "object",
+        "required": ["id", "title"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Column identifier"
+          },
+          "title": {
+            "type": "string",
+            "description": "Column header text"
+          },
+          "width": {
+            "type": "number",
+            "description": "Optional column width (default: auto)"
+          },
+          "sortable": {
+            "type": "boolean",
+            "description": "Whether this column is sortable (default: true)"
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "rows": {
+      "type": "array",
+      "description": "Table rows (array of arrays)",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "example": {
+    "columns": [
+      {"id": "sha", "title": "SHA"},
+      {"id": "message", "title": "Message"},
+      {"id": "author", "title": "Author"},
+      {"id": "date", "title": "Date"}
+    ],
+    "rows": [
+      ["abc123", "Fix bug in login", "John Doe", "2024-01-15"],
+      ["def456", "Add new feature", "Jane Smith", "2024-01-14"]
+    ]
+  }
+}

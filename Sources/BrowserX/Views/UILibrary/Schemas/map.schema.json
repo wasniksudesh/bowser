@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Map Component",
+  "description": "Interactive map component displaying Google Maps for location-based queries",
+  "type": "object",
+  "required": ["targetURL"],
+  "properties": {
+    "targetURL": {
+      "type": "string",
+      "description": "Google Maps search URL formatted as: https://www.google.com/maps/search/?api=1&query=<URL-encoded-query>",
+      "pattern": "^https://www\\.google\\.com/maps/"
+    },
+    "title": {
+      "type": "string",
+      "description": "Optional title for the map panel (e.g., 'Nearby Locations', 'Map View')"
+    },
+    "searchQuery": {
+      "type": "string",
+      "description": "The search query used to generate the map (for display purposes)"
+    }
+  },
+  "additionalProperties": false,
+  "example": {
+    "targetURL": "https://www.google.com/maps/search/?api=1&query=Starbucks+near+Times+Square",
+    "title": "Nearby Locations",
+    "searchQuery": "Starbucks near Times Square"
+  }
+}

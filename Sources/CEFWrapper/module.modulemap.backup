@@ -1,0 +1,13 @@
+// Module map for CEF C++ headers
+// This enables Swift's C++ interop to access CEF APIs directly
+
+module CEFWrapper [system] {
+    // CEF main header - include path set via CPLUS_INCLUDE_PATH or -I flag
+    header "cef_shim.h"
+    
+    // Link against CEF framework
+    link framework "Chromium Embedded Framework"
+    
+    // Export all CEF symbols
+    export *
+}

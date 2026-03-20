@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UI Component Registry",
+  "description": "Maps component types to their schema files and metadata",
+  "version": "1.0.0",
+  "components": {
+    "carousel": {
+      "schemaFile": "carousel.schema.json",
+      "displayName": "Image Carousel",
+      "category": "media",
+      "description": "Horizontal scrolling image gallery with captions"
+    },
+    "spotList": {
+      "schemaFile": "spotList.schema.json",
+      "displayName": "Spot List",
+      "category": "content",
+      "description": "Vertical list of locations or items with descriptions"
+    },
+    "highlightsTab": {
+      "schemaFile": "highlightsTab.schema.json",
+      "displayName": "Highlights Tabs",
+      "category": "navigation",
+      "description": "Tabbed interface for categorized content"
+    },
+    "destinationCard": {
+      "schemaFile": "destinationCard.schema.json",
+      "displayName": "Destination Card",
+      "category": "content",
+      "description": "Compact card for destination information"
+    },
+    "map": {
+      "schemaFile": "map.schema.json",
+      "displayName": "Interactive Map",
+      "category": "media",
+      "description": "Interactive Google Maps panel for locations"
+    }
+  }
+}

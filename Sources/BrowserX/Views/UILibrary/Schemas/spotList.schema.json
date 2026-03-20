@@ -1,0 +1,103 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Spot List Component",
+  "description": "Vertical list of spots/locations with descriptions",
+  "type": "object",
+  "required": ["spots"],
+  "properties": {
+    "spots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Spot name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Brief description of the spot"
+          },
+          "url": {
+            "type": "string",
+            "description": "URL to open when spot is clicked (optional, but STRONGLY RECOMMENDED)"
+          },
+          "details": {
+            "type": "object",
+            "description": "Optional detailed information for expanded view",
+            "properties": {
+              "images": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["url"],
+                  "properties": {
+                    "id": {"type": "string"},
+                    "url": {"type": "string"},
+                    "caption": {"type": "string"}
+                  }
+                }
+              },
+              "summary": {
+                "type": "string",
+                "description": "Enriched summary of the spot"
+              },
+              "rating": {
+                "type": "number",
+                "description": "Rating score (0-5)"
+              },
+              "reviewCount": {
+                "type": "integer",
+                "description": "Total number of reviews"
+              },
+              "reviewSnippets": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["text"],
+                  "properties": {
+                    "id": {"type": "string"},
+                    "text": {"type": "string"},
+                    "author": {"type": "string"},
+                    "rating": {"type": "number"}
+                  }
+                }
+              },
+              "citations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["title", "url", "section"],
+                  "properties": {
+                    "id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "url": {"type": "string"},
+                    "section": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "example": {
+    "spots": [
+      {
+        "name": "Sassi di Matera",
+        "description": "UNESCO-listed cave districts",
+        "url": "https://www.google.com/search?q=Sassi+di+Matera"
+      },
+      {
+        "name": "Casa Grotta",
+        "description": "Restored cave home museum",
+        "url": "https://www.google.com/search?q=Casa+Grotta+Matera"
+      }
+    ]
+  }
+}

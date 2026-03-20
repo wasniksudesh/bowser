@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Bowser needs camera access to enable video calls and conferencing in websites.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Bowser needs microphone access to enable voice calls and audio recording in websites.</string>
+</dict>
+</plist>

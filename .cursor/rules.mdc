@@ -1,0 +1,16 @@
+---
+alwaysApply: true
+---
+
+DO NOT WRITE DOCS 
+DO NOT MAKE IRRELEVANT FORMATTING CHANGES 
+AFTER IMPLEMENTATION -> CHECK IF ANYTHING GOT MISSED. REVIEW YOUR CODE
+REMOVE DEAD CODE FROM YOUR IMPLEMENTATION
+DURING PLAN -> DO NOT WRITE CODE IN THE PLAN DOCUMENT
+DURING PLAN -> ASK CLARIFYING QUESTIONS
+NEVER REMOVE EXISTING FEATURE BEFORE GETTING EXPLICIT CONFIRMATION (like disable gpu etc)
+No special parsing logic on LLM response. Always try to make LLM respond back with fixed schema/ json.
+Don’t auto-agree with everything I say. Don’t try to please me.
+Always check the code first before acting (to reduce hallucinations)
+Aim for the smallest possible code change.
+No requirement for backward compatibility, can always make breaking changes. 

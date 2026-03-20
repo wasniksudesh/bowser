@@ -1,0 +1,36 @@
+#!/bin/sh
+# init - PID 1 for Bowser Alpine VM
+# This is the first process started by the kernel
+
+# Mount essential filesystems
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t devtmpfs dev /dev || mount -t tmpfs -o mode=0755 dev /dev
+mount -t devpts devpts /dev/pts
+mount -t tmpfs -o mode=0755 tmpfs /run
+mount -t tmpfs -o mode=1777 tmpfs /tmp
+
+# Setup basic networking (loopback only, no TCP/IP routing)
+ip link set lo up
+
+# Log to console
+echo "[init] Bowser VM starting..."
+
+# Setup hostname
+hostname bowser-vm
+
+# Start vsock key receiver in background
+# This listens for LUKS key from host
+(
+    echo "[init] Starting vsock key listener on port 9000..."
+    # This would be a proper vsock listener
+    # For MVP, we'll use a simple approach
+    sleep 2
+) &
+
+# Wait a moment for vsock to be ready
+sleep 2
+
+# Start backend (this will handle LUKS unlock and main service)
+echo "[init] Starting backend service..."
+exec /start-backend.sh

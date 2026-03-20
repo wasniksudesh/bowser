@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "List Component",
+  "description": "Key-value or bullet list for structured output",
+  "type": "object",
+  "required": ["items"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Optional list title"
+    },
+    "items": {
+      "type": "array",
+      "description": "List items",
+      "items": {
+        "type": "object",
+        "required": ["label"],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Item label or key"
+          },
+          "value": {
+            "type": "string",
+            "description": "Item value (optional for bullet lists)"
+          },
+          "icon": {
+            "type": "string",
+            "description": "Optional SF Symbol icon name"
+          },
+          "badge": {
+            "type": "string",
+            "description": "Optional badge text"
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "style": {
+      "type": "string",
+      "description": "List style",
+      "enum": ["bullet", "numbered", "keyValue"],
+      "default": "bullet"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "title": "Extracted Entities",
+      "items": [
+        {"label": "John Doe", "badge": "PERSON"},
+        {"label": "GitHub", "badge": "ORG"},
+        {"label": "San Francisco", "badge": "LOCATION"}
+      ],
+      "style": "bullet"
+    },
+    {
+      "title": "Repository Info",
+      "items": [
+        {"label": "Owner", "value": "facebook"},
+        {"label": "Name", "value": "react"},
+        {"label": "Stars", "value": "210,000"},
+        {"label": "License", "value": "MIT"}
+      ],
+      "style": "keyValue"
+    }
+  ]
+}

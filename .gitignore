@@ -1,0 +1,94 @@
+# Swift Package Manager
+**/.build/
+**/.swiftpm/
+Package.resolved
+*.xcodeproj
+xcuserdata/
+DerivedData/
+
+# Xcode
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+*.xcscmblueprint
+*.xcworkspace
+!*.xcworkspace/contents.xcworkspacedata
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+*.dmg
+*.app
+
+# Python (Sidecar)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+Sidecar/.venv/
+Sidecar/data/
+.venv/
+venv/
+ENV/
+env/
+.env
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# CEF (Chromium Embedded Framework)
+# Download CEF separately - see README for setup instructions
+Vendor/cef/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Crash logs
+*.crash
+*.ips
+Crashlytics/
+
+# Code coverage
+*.gcda
+*.gcno
+*.gcov
+codecov/
+coverage/
+
+# Test artifacts
+.test-results/
+test-output/
+
+Bowser.app/

@@ -1,27 +1,41 @@
 """
 Generative UI Routes
 
-Purpose: API endpoints for generating UI layouts and resolving component data
-for the Plan Mode leaf view (LLM-driven component selection and data).
+Single SSE streaming endpoint: POST /stream
+- Makes one merged LLM call for all LLM-sourced components
+- Dispatches API-sourced components to their resolvers concurrently
+- Emits SSE events as each component resolves: plan, component_data, error, done
+
+Separate endpoint kept: POST /resolve-spot-details (user-initiated, not part of layout stream)
 """
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
-import logging
+import asyncio
 import json
+import logging
 from pathlib import Path
-from jsonschema import validate, ValidationError as JsonSchemaValidationError
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from jsonschema import ValidationError as JsonSchemaValidationError
+from jsonschema import validate
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Path to UI component schemas (in Swift UILibrary)
-SCHEMAS_DIR = Path(__file__).parent.parent.parent.parent / "Sources" / "Bowser" / "Views" / "UILibrary" / "Schemas"
+SCHEMAS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / "Sources"
+    / "Bowser"
+    / "Views"
+    / "UILibrary"
+    / "Schemas"
+)
 
 # =============================================================================
-# Models
+# Pydantic Models
 # =============================================================================
 
 
@@ -41,33 +55,19 @@ class UIComponentSpec(BaseModel):
     position: ComponentPosition
     size: ComponentSize
     dataPrompt: str
+    # Per-instance override of the registry dataSource default ("llm" | "api").
+    # When the LLM plans a table backed by a real API it sets this to "api";
+    # when it generates the data itself it sets or omits this (defaults to "llm").
+    dataSource: Optional[str] = None
 
 
 class GenerativeUILayout(BaseModel):
     components: List[UIComponentSpec]
 
 
-class PlanRequest(BaseModel):
+class StreamRequest(BaseModel):
     leafContext: Dict[str, Any]
     availableComponents: List[Dict[str, Any]]
-
-
-class PlanResponse(BaseModel):
-    layout: GenerativeUILayout
-
-
-class ResolveRequest(BaseModel):
-    componentId: str
-    componentType: str
-    dataPrompt: str
-    leafContext: Dict[str, Any]
-
-
-class ResolveResponse(BaseModel):
-    componentId: str
-    data: Optional[Any] = None
-    success: bool = True
-    error: Optional[str] = None
 
 
 class SpotDetailRequest(BaseModel):
@@ -85,436 +85,496 @@ class SpotDetailResponse(BaseModel):
 
 
 # =============================================================================
-# Schema Loading and Management
+# Schema Registry
 # =============================================================================
 
+
 def load_component_schemas() -> Dict[str, Dict[str, Any]]:
-    """Load all component schemas from the Schemas directory."""
-    schemas = {}
-    
+    """Load all component schemas from the Schemas directory.
+
+    Returns a dict keyed by component type with:
+      - description, schema, example, promptInstructions, dataSource
+    """
+    schemas: Dict[str, Dict[str, Any]] = {}
+
     if not SCHEMAS_DIR.exists():
-        logger.warning(f"Schemas directory not found: {SCHEMAS_DIR}")
+        logger.warning("Schemas directory not found: %s", SCHEMAS_DIR)
         return schemas
-    
-    # Load registry to get component type mappings
+
     registry_path = SCHEMAS_DIR / "registry.json"
     if not registry_path.exists():
-        logger.warning(f"Registry not found: {registry_path}")
+        logger.warning("Registry not found: %s", registry_path)
         return schemas
-    
+
     try:
-        with open(registry_path, 'r') as f:
+        with open(registry_path) as f:
             registry = json.load(f)
-        
-        # Load each component schema
+
         for component_type, metadata in registry.get("components", {}).items():
             schema_file = metadata.get("schemaFile")
             if not schema_file:
                 continue
-            
+
             schema_path = SCHEMAS_DIR / schema_file
             if not schema_path.exists():
-                logger.warning(f"Schema file not found: {schema_path}")
+                logger.warning("Schema file not found: %s", schema_path)
                 continue
-            
-            with open(schema_path, 'r') as f:
+
+            with open(schema_path) as f:
                 schema_data = json.load(f)
-            
+
+            # Prefer example from schema file; fall back to examples[0] if plural
+            example = schema_data.get("example") or (
+                schema_data.get("examples", [None])[0]
+            )
+
             schemas[component_type] = {
-                "description": schema_data.get("description", metadata.get("description", "")),
+                "description": metadata.get("description", schema_data.get("description", "")),
                 "schema": schema_data,
-                "example": schema_data.get("example")
+                "example": example,
+                "promptInstructions": metadata.get("promptInstructions"),
+                "dataSource": metadata.get("dataSource", "llm"),
+                "sizeHint": metadata.get("sizeHint", "auto"),
+                "compatibleDataTypes": metadata.get("compatibleDataTypes", []),
             }
-            
-            logger.info(f"Loaded schema for component: {component_type}")
-    
-    except Exception as e:
-        logger.error(f"Error loading schemas: {e}")
-    
+            logger.debug("Loaded schema for component: %s", component_type)
+
+    except Exception:
+        logger.exception("Error loading component schemas")
+
     return schemas
 
 
-# Load schemas at module import time
-COMPONENT_SCHEMAS = load_component_schemas()
+# Loaded once at module import time
+COMPONENT_SCHEMAS: Dict[str, Dict[str, Any]] = load_component_schemas()
 
 
 def validate_component_data(component_type: str, data: Any) -> tuple[bool, Optional[str]]:
-    """Validate data against component schema.
-    
-    Returns:
-        (is_valid, error_message)
+    """Validate data against the component's JSON schema.
+
+    Returns (is_valid, error_message).
     """
     if component_type not in COMPONENT_SCHEMAS:
         return False, f"Unknown component type: {component_type}"
-    
+
     schema = COMPONENT_SCHEMAS[component_type]["schema"]
-    
     try:
         validate(instance=data, schema=schema)
         return True, None
-    except JsonSchemaValidationError as e:
-        error_msg = f"Schema validation failed: {e.message}"
-        logger.warning(f"Validation error for {component_type}: {error_msg}")
-        return False, error_msg
+    except JsonSchemaValidationError as exc:
+        msg = f"Schema validation failed: {exc.message}"
+        logger.warning("Validation error for %s: %s", component_type, msg)
+        return False, msg
+
 
 # =============================================================================
-# Prompts
+# Prompt Construction
 # =============================================================================
 
-LAYOUT_SYSTEM_PROMPT = """You are a UI layout assistant. Given a leaf node context and available component types, choose a comprehensive layout (3-4 components) that presents MAXIMUM useful information to help users understand and explore the topic deeply.
+_STREAM_SYSTEM_PROMPT = """You are a UI layout and data assistant.
+Given a topic context and available component types, you will:
+1. Choose 3-4 components that best present the topic
+2. Generate the actual data for each LLM-sourced component in one response
 
-REQUIREMENTS:
-- Use 3-4 components to maximize information density
-- Always include at least one visual component (carousel) for images
-- Include detailed lists (spotList, highlightsTab) with comprehensive information
-- Diversify component types to show different aspects of the topic
-- Make the layout informative, actionable, and comprehensive
-
-Return only valid JSON, no markdown."""
-
-RESOLVE_SYSTEM_PROMPT = """You are a data generation assistant. Your job is to generate ACTUAL DATA VALUES (not schema definitions) for UI components. 
-
-CRITICAL: You must return a JSON object containing real data values, NOT a schema definition. 
-For example, if asked for a list of spots, return actual spot names and descriptions, not a schema describing what a spot should look like.
-
-Return only a valid JSON data object, no markdown or explanation."""
+Return ONLY valid JSON — no markdown, no explanation."""
 
 
-def get_layout_prompt(leaf_context: Dict[str, Any], available_components: List[Dict[str, Any]]) -> str:
-    import json as _json
+def _build_stream_prompt(
+    leaf_context: Dict[str, Any],
+    available_components: List[Dict[str, Any]],
+) -> str:
+    """Build the single merged prompt asking for layout + data for all LLM-sourced components.
+
+    Components with dataSource "api" are listed so the LLM knows about them and can
+    include them in the layout, but the LLM is told NOT to generate data for those —
+    the resolver will fetch it from the real API at runtime.
+    """
     leaf_title = leaf_context.get("title", "Unknown")
     leaf_desc = leaf_context.get("description", "")
-    
-    return f"""TOPIC CONTEXT (all components MUST relate to this):
+
+    llm_components = []
+    api_components = []
+    for comp in available_components:
+        default_source = comp.get("dataSource", "llm")
+        supported = comp.get("supportedDataSources", [default_source])
+        # A component is "api-capable" if it explicitly supports api and its default is api.
+        # Components that support BOTH (like table/chart) are listed in both groups so the
+        # LLM can choose per instance.
+        if default_source == "api" and "llm" not in supported:
+            api_components.append(comp)
+        else:
+            llm_components.append(comp)
+
+    llm_block_parts = []
+    for comp in llm_components:
+        ctype = comp["type"]
+        instructions = (comp.get("promptInstructions") or "").replace('"', "'")
+        supported_sources = comp.get("supportedDataSources", [comp.get("dataSource", "llm")])
+        example_str = json.dumps(comp.get("example"), indent=2) if comp.get("example") else "N/A"
+        llm_block_parts.append(
+            f'  "{ctype}": {{\n'
+            f'    "description": "{comp.get("description", "")}",\n'
+            f'    "supportedDataSources": {json.dumps(supported_sources)},\n'
+            f'    "promptInstructions": "{instructions}",\n'
+            f'    "example": {example_str}\n'
+            f"  }}"
+        )
+
+    api_block_parts = []
+    for comp in api_components:
+        ctype = comp["type"]
+        api_block_parts.append(
+            f'  "{ctype}": {{"description": "{comp.get("description", "")}", "dataSource": "api"}}'
+        )
+
+    llm_components_block = "{\n" + ",\n".join(llm_block_parts) + "\n}" if llm_block_parts else "{}"
+    api_note = ""
+    if api_block_parts:
+        api_components_block = "{\n" + ",\n".join(api_block_parts) + "\n}"
+        api_note = f"""
+API-SOURCED COMPONENTS (include in layout if relevant, but do NOT generate data for these — set dataSource to "api"):
+{api_components_block}
+"""
+
+    return f"""TOPIC CONTEXT (ALL content must relate to this):
 Title: {leaf_title}
 Description: {leaf_desc}
 
-Available component types (use "type" from each):
-{_json.dumps(available_components, indent=2)}
-
+LLM-SOURCED COMPONENTS (you generate the data for these):
+{llm_components_block}
+{api_note}
 INSTRUCTIONS:
-1. Create 3-4 components that comprehensively cover the topic "{leaf_title}"
-2. Always include carousel for visual content
-3. Include spotList or highlightsTab for detailed information
-4. Each dataPrompt should request COMPREHENSIVE, SPECIFIC information about "{leaf_title}"
-5. Make sure ALL components are directly relevant to "{leaf_title}" - NO unrelated content
-6. If the query is about a destination, place, or location, include a "map" component with targetURL set to a Google Maps search URL formatted as: https://www.google.com/maps/search/?api=1&query=<URL-encoded-search-term>
+1. Select 3-4 components that comprehensively cover "{leaf_title}"
+2. Always include carousel for visual content when relevant
+3. Include at least one list-type component (spotList or highlightsTab) for detailed information
+4. If the topic involves a location or destination, include a map component
+5. For components that support both "llm" and "api" sources (e.g. table, chart), set
+   dataSource to "api" if the data should come from a real API, or "llm" if you generate it
+6. For every LLM-sourced component, generate ACTUAL DATA in componentData
 
-Return a JSON object with this exact structure:
+Return this exact JSON structure:
 {{
-  "components": [
-    {{
-      "id": "comp1",
-      "type": "carousel",
-      "position": {{ "row": 0, "col": 0 }},
-      "size": {{ "width": 1.0, "height": "large" }},
-      "dataPrompt": "Detailed instruction requesting comprehensive data specifically about {leaf_title}"
-    }},
-    {{
-      "id": "comp2",
-      "type": "spotList",
-      "position": {{ "row": 1, "col": 0 }},
-      "size": {{ "width": 1.0, "height": "auto" }},
-      "dataPrompt": "Detailed instruction requesting specific, actionable items about {leaf_title}"
-    }}
-  ]
+  "layout": {{
+    "components": [
+      {{
+        "id": "comp1",
+        "type": "<componentType>",
+        "position": {{"row": 0, "col": 0}},
+        "size": {{"width": 1.0, "height": "large"}},
+        "dataPrompt": "<brief description of what data is included>",
+        "dataSource": "llm"
+      }}
+    ]
+  }},
+  "componentData": {{
+    "comp1": <actual data matching the component schema — ONLY for dataSource: "llm" components>
+  }}
 }}
 
-IDs: comp1, comp2, comp3, comp4. Row/col: 0-based grid. Maximize information density!"""
-
-
-def get_resolve_prompt(data_prompt: str, leaf_context: Dict[str, Any], component_type: str) -> str:
-    """Generate prompt with exact schema for the component type."""
-    import json as _json
-    
-    leaf_title = leaf_context.get("title", "Unknown topic")
-    leaf_desc = leaf_context.get("description", "")
-    
-    # Get schema and example for this component type
-    schema_info = COMPONENT_SCHEMAS.get(component_type)
-    if not schema_info:
-        return f"""Generate data for component type "{component_type}".
-
-CRITICAL CONTEXT - All content MUST be specifically about:
-Topic: {leaf_title}
-Description: {leaf_desc}
-
-Do NOT include content about unrelated topics.
-
-Data instruction: {data_prompt}
-
-Return a valid JSON object."""
-    
-    # Extract only the properties definition from the schema, not the meta-schema fields
-    schema = schema_info["schema"]
-    properties = schema.get("properties", {})
-    required = schema.get("required", [])
-    
-    # Build a simplified schema description
-    schema_description = f"""{{
-  "type": "object",
-  "required": {_json.dumps(required)},
-  "properties": {_json.dumps(properties, indent=4)}
-}}"""
-    
-    example_json = _json.dumps(schema_info["example"], indent=2) if schema_info.get("example") else "No example available"
-    
-    # Add component-specific instructions
-    additional_instructions = ""
-    if component_type == "highlightsTab":
-        additional_instructions = f"""
-SPECIAL INSTRUCTIONS FOR highlightsTab:
-- Set "sectionTitle" based on the topic type (e.g., "Highlights by Destination" for travel, "Highlights by Brand" for products, "Key Categories" for general topics)
-- Generate sectionTitle that makes sense for "{leaf_title}"
-- Each tab should represent a distinct aspect or category related to "{leaf_title}"
-- Include comprehensive spot information with URLs"""
-    elif component_type == "spotList":
-        additional_instructions = f"""
-SPECIAL INSTRUCTIONS FOR spotList:
-- Each spot MUST include a "url" field with a real, searchable URL (Google search or direct website)
-- URLs should be specific and actionable (e.g., "https://www.google.com/search?q=Sassi+di+Matera")
-- Include 5-8 spots for maximum information density
-- Make descriptions detailed and informative (not generic)"""
-    elif component_type == "carousel":
-        additional_instructions = f"""
-SPECIAL INSTRUCTIONS FOR carousel:
-- Find 4-6 high-quality, relevant images
-- Use real image URLs from web search
-- Include specific, descriptive captions
-- Images should directly relate to "{leaf_title}" """
-    elif component_type == "map":
-        additional_instructions = f"""
-SPECIAL INSTRUCTIONS FOR map:
-- Generate a valid Google Maps search URL for "{leaf_title}"
-- Format: https://www.google.com/maps/search/?api=1&query=<URL-encoded-query>
-- Example: https://www.google.com/maps/search/?api=1&query=Starbucks+near+Times+Square
-- Replace spaces with + in the query parameter
-- Include relevant location context in the search query
-- Set title to something descriptive like "Map View" or "Nearby Locations"
-- Set searchQuery to the human-readable search terms used"""
-    
-    return f"""🎯 YOUR TASK: Generate actual DATA (not a schema) for a "{component_type}" UI component.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CRITICAL CONTEXT - All content MUST be about:
-Topic: {leaf_title}
-Description: {leaf_desc}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚠️  STRICT REQUIREMENT: Do NOT include ANY content about topics other than "{leaf_title}"
-
-📋 Data instruction: {data_prompt}
-{additional_instructions}
-
-CONTENT QUALITY REQUIREMENTS:
-✓ Use web search to find REAL, current information
-✓ Include specific names, places, URLs (not generic placeholders)
-✓ Provide detailed descriptions (not one-liners)
-✓ Make content actionable - users should be able to click and explore
-✓ Maximize information density - be comprehensive
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📐 DATA FORMAT SPECIFICATION (for reference only):
-{schema_description}
-
-✅ EXAMPLE OF CORRECT OUTPUT (this is actual data, not a schema):
-{example_json}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🚨 CRITICAL: Return ONLY actual data in JSON format - DO NOT return a schema definition.
-Your response should look like the EXAMPLE above, with real values, NOT like the FORMAT SPECIFICATION.
-No markdown code blocks, no explanations, just the raw JSON data object."""
+CRITICAL RULES:
+- componentData values must be ACTUAL DATA (real names, URLs, descriptions) — not schema definitions
+- Only include a key in componentData for components with dataSource "llm"
+- All content must be specifically about "{leaf_title}" — no unrelated topics
+- Use real URLs where applicable (Google search URLs, Google Maps URLs, etc.)
+- IDs must be comp1, comp2, comp3, comp4"""
 
 
 # =============================================================================
-# Helpers
+# API Resolver (placeholder — wire up your metrics/database API here)
 # =============================================================================
 
 
-async def _call_llm(prompt: str, system_prompt: str = LAYOUT_SYSTEM_PROMPT) -> Dict[str, Any]:
-    from app.main import ai_agent
-    if not ai_agent:
-        raise HTTPException(status_code=503, detail="AI service not initialized")
+async def _resolve_from_api(
+    component_type: str,
+    leaf_context: Dict[str, Any],
+) -> Optional[Any]:
+    """Resolve data for API-sourced components.
 
-    full_prompt = f"{system_prompt}\n\n{prompt}"
-    content = ""
-    try:
-        result = await ai_agent.execute_task(
-            task=full_prompt,
-            context={"mode": "json_mode"},
-            use_tools=False,
-        )
-        if not result.get("success"):
-            raise Exception(result.get("error", "LLM call failed"))
-        content = result.get("output", "")
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        return json.loads(content)
-    except json.JSONDecodeError as e:
-        logger.error(f"Generative UI: failed to decode JSON from LLM: {e}. Content: {content}")
-        raise HTTPException(status_code=500, detail="LLM returned invalid JSON")
-    except Exception as e:
-        logger.error(f"Generative UI LLM failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    Replace the body of this function with your actual API call
+    (e.g. metrics server, database query, etc.).
+    """
+    logger.info("API resolver called for component type: %s", component_type)
+    # Placeholder — returns None so the component renders as loading/empty
+    # until a real data source is wired up.
+    return None
 
 
 # =============================================================================
-# Endpoints
+# JSON Parsing Helpers
 # =============================================================================
 
 
-@router.post("/plan", response_model=PlanResponse)
-async def plan_layout(request: PlanRequest):
-    """Generate a UI layout (list of components) for the given leaf context."""
-    logger.info("Generating layout for leaf: %s", request.leafContext.get("title"))
-    prompt = get_layout_prompt(request.leafContext, request.availableComponents)
-    data = await _call_llm(prompt)
-    components = [
-        UIComponentSpec(
-            id=c["id"],
-            type=c["type"],
-            position=ComponentPosition(**c["position"]),
-            size=ComponentSize(**c.get("size", {"width": 1.0, "height": "auto"})),
-            dataPrompt=c.get("dataPrompt", ""),
-        )
-        for c in data.get("components", [])
-    ]
-    return PlanResponse(layout=GenerativeUILayout(components=components))
+def _strip_markdown_fences(content: str) -> str:
+    """Remove markdown code fences if the LLM wrapped its response."""
+    if "```json" in content:
+        return content.split("```json")[1].split("```")[0].strip()
+    if "```" in content:
+        return content.split("```")[1].split("```")[0].strip()
+    return content.strip()
 
 
-@router.post("/resolve", response_model=ResolveResponse)
-async def resolve_component_data(request: ResolveRequest):
-    """Resolve data for a single UI component from the data prompt and leaf context."""
-    logger.info("Resolving data for component %s (%s)", request.componentId, request.componentType)
-    
-    # Build prompt with web search guidance
-    base_prompt = get_resolve_prompt(
-        request.dataPrompt,
-        request.leafContext,
-        request.componentType,
+def _is_schema_not_data(data: Any) -> bool:
+    """Detect if the LLM returned a JSON schema definition instead of actual data."""
+    return (
+        isinstance(data, dict)
+        and "properties" in data
+        and any(k in data for k in ("$schema", "required", "type"))
+        and not any(k in data for k in ("spots", "tabs", "items", "content", "targetURL", "title", "chartType"))
     )
-    enhanced_prompt = f"{base_prompt}\n\nIMPORTANT: Use web search to find current, accurate, real-world information. Return actual URLs for images, real place names, and up-to-date data."
-    
-    try:
-        # Use web search for data resolution
+
+
+# =============================================================================
+# SSE Helpers
+# =============================================================================
+
+
+def _sse_event(event_type: str, payload: Any) -> str:
+    return f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+
+
+# =============================================================================
+# Streaming Endpoint
+# =============================================================================
+
+
+@router.post("/stream")
+async def stream_layout(request: StreamRequest):
+    """Single SSE endpoint that streams layout plan and component data.
+
+    SSE event types:
+      plan           — layout skeleton (component list) ready; Swift renders skeletons
+      component_data — one component's data resolved; Swift renders the component
+      error          — a single component failed; Swift shows error state for it
+      done           — all components resolved; stream closes
+    """
+    logger.info("Starting generative UI stream for: %s", request.leafContext.get("title"))
+
+    async def event_generator():
         from app.main import ai_agent
+
         if not ai_agent:
-            raise HTTPException(status_code=503, detail="AI service not initialized")
-        
-        full_prompt = f"{RESOLVE_SYSTEM_PROMPT}\n\n{enhanced_prompt}"
+            yield _sse_event("error", {"message": "AI service not initialized"})
+            return
+
+        # ------------------------------------------------------------------
+        # Step 1: Enrich available_components with server-side schema data
+        #         (promptInstructions, examples, supportedDataSources live in
+        #          COMPONENT_SCHEMAS, not in what the Swift client sends)
+        # ------------------------------------------------------------------
+        enriched_components = []
+        for comp in request.availableComponents:
+            ctype = comp.get("type", "")
+            schema_info = COMPONENT_SCHEMAS.get(ctype, {})
+            enriched = {**comp}
+            enriched.setdefault("promptInstructions", schema_info.get("promptInstructions"))
+            enriched.setdefault("supportedDataSources", [enriched.get("dataSource", "llm")])
+            if not enriched.get("example"):
+                enriched["example"] = schema_info.get("example")
+            enriched_components.append(enriched)
+
+        # ------------------------------------------------------------------
+        # Step 2: Single merged LLM call — plan + all LLM component data
+        # ------------------------------------------------------------------
+        prompt = _build_stream_prompt(request.leafContext, enriched_components)
+        full_prompt = f"{_STREAM_SYSTEM_PROMPT}\n\n{prompt}"
+
         content = ""
-        
-        result = await ai_agent.execute_task(
-            task=full_prompt,
-            context={"mode": "json_mode", "enable_web_search": True},
-            use_tools=True,  # Enable tool use for web search
-        )
-        print(f"Resolve Result {result}")
-        
-        if not result.get("success"):
-            raise Exception(result.get("error", "LLM call failed"))
-        
-        content = result.get("output", "")
-        
-        # Clean up markdown code blocks
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        
-        data = json.loads(content)
-        print(f"Resolve Data {data}")
-        
-        # Check if LLM returned a schema instead of data
-        if isinstance(data, dict) and any(key in data for key in ['$schema', 'properties', 'required', 'title', 'type']) and 'properties' in data:
-            logger.error(f"LLM returned a schema instead of data for {request.componentId}")
-            logger.error(f"Returned schema: {json.dumps(data, indent=2)[:500]}")
-            return ResolveResponse(
-                componentId=request.componentId,
-                data=None,
-                success=False,
-                error="LLM returned a schema definition instead of actual data. This is a prompt interpretation error.",
+        try:
+            result = await ai_agent.execute_task(
+                task=full_prompt,
+                context={"mode": "json_mode", "enable_web_search": True},
+                use_tools=True,
             )
-        
-        # Validate data against schema
-        is_valid, validation_error = validate_component_data(request.componentType, data)
-        if not is_valid:
-            logger.error(f"Schema validation failed for {request.componentId}: {validation_error}")
-            logger.error(f"Invalid data: {json.dumps(data, indent=2)}")
-            return ResolveResponse(
-                componentId=request.componentId,
-                data=None,
-                success=False,
-                error=f"Data validation failed: {validation_error}",
-            )
-        
-        return ResolveResponse(
-            componentId=request.componentId,
-            data=data,
-            success=True,
-            error=None,
-        )
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to decode JSON for {request.componentId}: {e}. Content: {content[:200]}")
-        return ResolveResponse(
-            componentId=request.componentId,
-            data=None,
-            success=False,
-            error="Invalid JSON response from LLM",
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Resolve failed for %s", request.componentId)
-        return ResolveResponse(
-            componentId=request.componentId,
-            data=None,
-            success=False,
-            error=str(e),
-        )
+            if not result.get("success"):
+                raise RuntimeError(result.get("error", "LLM call failed"))
+            content = _strip_markdown_fences(result.get("output", ""))
+            merged = json.loads(content)
+        except json.JSONDecodeError as exc:
+            logger.error("LLM returned invalid JSON: %s. Content: %.300s", exc, content)
+            yield _sse_event("error", {"message": "LLM returned invalid JSON"})
+            return
+        except Exception as exc:
+            logger.exception("LLM call failed")
+            yield _sse_event("error", {"message": str(exc)})
+            return
+
+        # ------------------------------------------------------------------
+        # Step 2: Parse layout and emit plan event so Swift shows skeletons
+        # ------------------------------------------------------------------
+        raw_layout = merged.get("layout", {})
+        raw_components = raw_layout.get("components", [])
+        if not raw_components:
+            yield _sse_event("error", {"message": "LLM returned no components"})
+            return
+
+        components: List[UIComponentSpec] = []
+        for c in raw_components:
+            try:
+                components.append(
+                    UIComponentSpec(
+                        id=c["id"],
+                        type=c["type"],
+                        position=ComponentPosition(**c["position"]),
+                        size=ComponentSize(**c.get("size", {"width": 1.0, "height": "auto"})),
+                        dataPrompt=c.get("dataPrompt", ""),
+                        dataSource=c.get("dataSource"),
+                    )
+                )
+            except Exception:
+                logger.warning("Skipping malformed component spec: %s", c)
+
+        if not components:
+            yield _sse_event("error", {"message": "No valid component specs in LLM response"})
+            return
+
+        layout = GenerativeUILayout(components=components)
+        yield _sse_event("plan", layout.model_dump())
+
+        # ------------------------------------------------------------------
+        # Step 3: Emit component_data events concurrently
+        #   - LLM-sourced: data already in merged["componentData"]
+        #   - API-sourced: fire API calls now, emit when ready
+        # ------------------------------------------------------------------
+        llm_data: Dict[str, Any] = merged.get("componentData", {})
+        # Use a queue so we can yield from a single coroutine while tasks run
+        queue: asyncio.Queue = asyncio.Queue()
+
+        async def _process_llm_component(comp: UIComponentSpec) -> None:
+            data = llm_data.get(comp.id)
+            if data is None:
+                await queue.put(_sse_event(
+                    "error",
+                    {"componentId": comp.id, "message": "LLM did not return data for this component"},
+                ))
+                return
+
+            if _is_schema_not_data(data):
+                logger.error("LLM returned schema instead of data for %s", comp.id)
+                await queue.put(_sse_event(
+                    "error",
+                    {"componentId": comp.id, "message": "LLM returned a schema instead of data"},
+                ))
+                return
+
+            is_valid, validation_error = validate_component_data(comp.type, data)
+            if not is_valid:
+                logger.error("Validation failed for %s: %s", comp.id, validation_error)
+                await queue.put(_sse_event(
+                    "error",
+                    {"componentId": comp.id, "message": f"Data validation failed: {validation_error}"},
+                ))
+                return
+
+            await queue.put(_sse_event("component_data", {"componentId": comp.id, "data": data}))
+
+        async def _process_api_component(comp: UIComponentSpec) -> None:
+            try:
+                data = await _resolve_from_api(comp.type, request.leafContext)
+                if data is not None:
+                    is_valid, validation_error = validate_component_data(comp.type, data)
+                    if is_valid:
+                        await queue.put(_sse_event(
+                            "component_data", {"componentId": comp.id, "data": data}
+                        ))
+                        return
+                    logger.error("API data validation failed for %s: %s", comp.id, validation_error)
+                # data is None or invalid — emit error so Swift can show empty state
+                await queue.put(_sse_event(
+                    "error",
+                    {"componentId": comp.id, "message": "API resolver returned no data"},
+                ))
+            except Exception as exc:
+                logger.exception("API resolver failed for %s", comp.id)
+                await queue.put(_sse_event(
+                    "error", {"componentId": comp.id, "message": str(exc)}
+                ))
+
+        # Launch all component tasks concurrently.
+        # Per-instance dataSource (set by the LLM in the plan) takes priority over
+        # the registry default, so a table can be "llm" or "api" depending on context.
+        component_tasks = []
+        for comp in components:
+            schema_info = COMPONENT_SCHEMAS.get(comp.type, {})
+            registry_default = schema_info.get("dataSource", "llm")
+            effective_source = comp.dataSource or registry_default
+            if effective_source == "api":
+                task = asyncio.create_task(_process_api_component(comp))
+            else:
+                task = asyncio.create_task(_process_llm_component(comp))
+            component_tasks.append(task)
+
+        # Drain the queue as tasks complete
+        remaining = len(component_tasks)
+        done_tasks = 0
+
+        async def _drain_queue():
+            nonlocal done_tasks
+            while done_tasks < remaining:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=60.0)
+                    yield event
+                    done_tasks += 1
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+
+        async for event in _drain_queue():
+            yield event
+
+        # Wait for all tasks to finish cleanly
+        await asyncio.gather(*component_tasks, return_exceptions=True)
+        yield _sse_event("done", {})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# =============================================================================
+# Spot Detail Endpoint (user-initiated, kept separate from layout stream)
+# =============================================================================
 
 
 @router.post("/resolve-spot-details", response_model=SpotDetailResponse)
 async def resolve_spot_details(request: SpotDetailRequest):
     """Resolve detailed information for a specific spot including images, summary, ratings, and citations."""
     logger.info("Resolving spot details for: %s", request.spotName)
-    
+
     leaf_title = request.leafContext.get("title", "Unknown")
     leaf_desc = request.leafContext.get("description", "")
-    
-    # Build comprehensive prompt for spot details
+
     prompt = f"""Generate comprehensive, enriched details for a specific spot/resource.
 
-🎯 CRITICAL CONTEXT:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL CONTEXT:
 Spot Name: {request.spotName}
 Spot Description: {request.spotDescription}
 Topic Context: {leaf_title}
 Topic Description: {leaf_desc}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Generate COMPREHENSIVE details for "{request.spotName}". Use web search to find:
 
-1. **Images** (4-6 high-quality images):
+1. Images (4-6 high-quality images):
    - Real image URLs showing {request.spotName}
    - Include diverse angles/perspectives
    - Add descriptive captions
 
-2. **Summary** (150-250 words):
+2. Summary (150-250 words):
    - Rich, detailed description
    - Key features and highlights
    - What makes it special/unique
    - Practical information (when to visit, what to expect, etc.)
 
-3. **Ratings & Reviews**:
+3. Ratings & Reviews:
    - Overall rating (0-5 scale)
    - Total review count
    - 3-5 authentic review snippets with authors
 
-4. **Citations**:
+4. Citations:
    - 3-5 credible sources used to generate this information
    - Include title, URL, and which section each citation supports
    - Sources should be real, authoritative websites
@@ -535,66 +595,44 @@ REQUIRED JSON SCHEMA:
   ]
 }}
 
-IMPORTANT: 
+IMPORTANT:
 - Use web search to find REAL, current information
 - All URLs must be valid and accessible
-- Ratings/reviews should reflect actual data from web sources
-- Citations should reference real websites used as sources
 - Return ONLY valid JSON matching the schema above, no markdown"""
 
+    content = ""
     try:
         from app.main import ai_agent
+
         if not ai_agent:
-            raise HTTPException(status_code=503, detail="AI service not initialized")
-        
-        content = ""
+            return SpotDetailResponse(
+                spotId=request.spotId, success=False, error="AI service not initialized"
+            )
+
         result = await ai_agent.execute_task(
             task=prompt,
             context={"mode": "json_mode", "enable_web_search": True},
-            use_tools=True,  # Enable web search
+            use_tools=True,
         )
-        
+
         if not result.get("success"):
-            raise Exception(result.get("error", "LLM call failed"))
-        
-        content = result.get("output", "")
-        
-        # Clean up markdown code blocks
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        
+            raise RuntimeError(result.get("error", "LLM call failed"))
+
+        content = _strip_markdown_fences(result.get("output", ""))
         data = json.loads(content)
-        
-        # Basic validation - ensure required fields exist
+
         required_fields = ["images", "summary", "citations"]
         for field in required_fields:
             if field not in data:
                 raise ValueError(f"Missing required field: {field}")
-        
+
+        return SpotDetailResponse(spotId=request.spotId, data=data, success=True)
+
+    except json.JSONDecodeError as exc:
+        logger.error("Failed to decode JSON for spot %s: %s. Content: %.200s", request.spotId, exc, content)
         return SpotDetailResponse(
-            spotId=request.spotId,
-            data=data,
-            success=True,
-            error=None,
+            spotId=request.spotId, success=False, error="Invalid JSON response from LLM"
         )
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to decode JSON for spot {request.spotId}: {e}. Content: {content[:200]}")
-        return SpotDetailResponse(
-            spotId=request.spotId,
-            data=None,
-            success=False,
-            error="Invalid JSON response from LLM",
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
+    except Exception as exc:
         logger.exception("Spot detail resolution failed for %s", request.spotId)
-        return SpotDetailResponse(
-            spotId=request.spotId,
-            data=None,
-            success=False,
-            error=str(e),
-        )
+        return SpotDetailResponse(spotId=request.spotId, success=False, error=str(exc))

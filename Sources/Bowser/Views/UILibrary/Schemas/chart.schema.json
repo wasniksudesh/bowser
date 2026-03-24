@@ -53,6 +53,7 @@
     }
   },
   "additionalProperties": false,
+  "promptInstructions": "Generate a chart with meaningful labels and realistic data values. Choose chartType ('bar', 'line', or 'pie') based on what best visualises the data. Include a descriptive title. For bar/line use 4-8 labels; for pie use 3-6 slices.",
   "example": {
     "chartType": "bar",
     "title": "Commits per Week",

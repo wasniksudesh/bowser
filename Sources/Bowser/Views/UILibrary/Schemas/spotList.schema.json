@@ -86,6 +86,7 @@
     }
   },
   "additionalProperties": false,
+  "promptInstructions": "Each spot MUST include a 'url' field with a real, searchable URL (e.g. Google search or direct website). Include 5-8 spots for maximum information density. Make descriptions detailed and informative (not generic).",
   "example": {
     "spots": [
       {

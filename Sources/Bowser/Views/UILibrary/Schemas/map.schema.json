@@ -20,6 +20,7 @@
     }
   },
   "additionalProperties": false,
+  "promptInstructions": "Generate a valid Google Maps search URL. Format: https://www.google.com/maps/search/?api=1&query=<URL-encoded-query> (replace spaces with +). Set 'title' to something descriptive like 'Map View'. Set 'searchQuery' to the human-readable search terms used.",
   "example": {
     "targetURL": "https://www.google.com/maps/search/?api=1&query=Starbucks+near+Times+Square",
     "title": "Nearby Locations",

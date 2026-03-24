@@ -29,6 +29,7 @@
     }
   },
   "additionalProperties": false,
+  "promptInstructions": "Generate rich, informative content. Use 'markdown' format for structured content with headers and lists. Use 'code' format for code snippets (set 'language' field). Use 'plain' for simple prose. Be comprehensive and specific to the topic.",
   "examples": [
     {
       "content": "This is a simple text block with plain formatting.",

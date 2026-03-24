@@ -44,6 +44,7 @@
     }
   },
   "additionalProperties": false,
+  "promptInstructions": "Generate a comprehensive list of relevant properties or items. Use 'keyValue' style for properties with label+value pairs. Use 'bullet' style for plain enumerated items. Include 5-10 items for good density.",
   "examples": [
     {
       "title": "Extracted Entities",

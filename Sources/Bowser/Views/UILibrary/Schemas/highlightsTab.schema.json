@@ -58,6 +58,7 @@
     }
   },
   "additionalProperties": false,
+  "promptInstructions": "Set 'sectionTitle' dynamically based on topic type (e.g., 'Highlights by Destination' for travel, 'Top Categories' for general). Each tab should represent a distinct aspect or category. Generate 2-4 tabs. Include comprehensive spot information with URLs.",
   "example": {
     "sectionTitle": "Highlights by Destination",
     "tabs": [

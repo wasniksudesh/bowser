@@ -23,6 +23,7 @@
     }
   },
   "additionalProperties": false,
+  "promptInstructions": "Provide the destination's title, a subtitle combining country and a brief descriptor (e.g., 'Italy · Cave city'), a duration badge (e.g., '2-3 days'), and a badge label (e.g., 'Ideal stay'). Keep all fields concise.",
   "example": {
     "title": "Matera",
     "subtitle": "Italy · Cave city",

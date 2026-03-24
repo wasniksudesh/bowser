@@ -1,38 +1,100 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "UI Component Registry",
-  "description": "Maps component types to their schema files and metadata",
-  "version": "1.0.0",
+  "description": "Maps component types to their schema files, metadata, and data sources",
+  "version": "2.0.0",
   "components": {
     "carousel": {
       "schemaFile": "carousel.schema.json",
       "displayName": "Image Carousel",
       "category": "media",
-      "description": "Horizontal scrolling image gallery with captions"
+      "dataSource": "llm",
+      "sizeHint": "large",
+      "description": "Horizontal scrolling image gallery with captions. Perfect for showcasing photos, destinations, or visual content.",
+      "compatibleDataTypes": ["images", "photos", "gallery"],
+      "promptInstructions": "Find 4-6 high-quality, relevant images. Use real image URLs from web search. Include specific, descriptive captions. Images should directly relate to the topic."
     },
     "spotList": {
       "schemaFile": "spotList.schema.json",
       "displayName": "Spot List",
       "category": "content",
-      "description": "Vertical list of locations or items with descriptions"
+      "dataSource": "llm",
+      "sizeHint": "medium",
+      "description": "Vertical list of spots/locations with names and descriptions. Shows clickable items with URLs.",
+      "compatibleDataTypes": ["list", "spots", "locations", "places"],
+      "promptInstructions": "Each spot MUST include a 'url' field with a real, searchable URL (e.g. Google search or direct website). Include 5-8 spots for maximum information density. Make descriptions detailed and informative (not generic)."
     },
     "highlightsTab": {
       "schemaFile": "highlightsTab.schema.json",
-      "displayName": "Highlights Tabs",
+      "displayName": "Highlights Tab View",
       "category": "navigation",
-      "description": "Tabbed interface for categorized content"
+      "dataSource": "llm",
+      "sizeHint": "large",
+      "description": "Tabbed interface for comparing multiple categories or destinations. Each tab contains a description and list of spots.",
+      "compatibleDataTypes": ["tabs", "highlights", "categories", "comparisons"],
+      "promptInstructions": "Set 'sectionTitle' dynamically based on topic type (e.g., 'Highlights by Destination' for travel, 'Top Categories' for general). Each tab should represent a distinct aspect or category. Generate 2-4 tabs. Include comprehensive spot information with URLs."
     },
     "destinationCard": {
       "schemaFile": "destinationCard.schema.json",
       "displayName": "Destination Card",
       "category": "content",
-      "description": "Compact card for destination information"
+      "dataSource": "llm",
+      "sizeHint": "small",
+      "description": "Compact card showing a destination with title, subtitle, badge, and ideal stay duration. Perfect for travel planning.",
+      "compatibleDataTypes": ["destination", "location", "place"],
+      "promptInstructions": "Provide the destination's title, a subtitle combining country and a brief descriptor (e.g., 'Italy · Cave city'), a duration badge (e.g., '2-3 days'), and a badge label (e.g., 'Ideal stay'). Keep all fields concise."
     },
     "map": {
       "schemaFile": "map.schema.json",
       "displayName": "Interactive Map",
       "category": "media",
-      "description": "Interactive Google Maps panel for locations"
+      "dataSource": "llm",
+      "sizeHint": "large",
+      "description": "Interactive Google Maps panel for location-based queries. Collapsible and resizable.",
+      "compatibleDataTypes": ["map", "location", "destination", "place", "geography"],
+      "promptInstructions": "Generate a valid Google Maps search URL. Format: https://www.google.com/maps/search/?api=1&query=<URL-encoded-query> (replace spaces with +). Set 'title' to something descriptive like 'Map View'. Set 'searchQuery' to the human-readable search terms used."
+    },
+    "table": {
+      "schemaFile": "table.schema.json",
+      "displayName": "Data Table",
+      "category": "data",
+      "dataSource": "llm",
+      "supportedDataSources": ["llm", "api"],
+      "sizeHint": "medium",
+      "description": "Sortable table for structured data with columns and rows. Works with LLM-generated data or a live API/database source.",
+      "compatibleDataTypes": ["table", "list", "data", "rows", "records", "metrics"],
+      "promptInstructions": "Generate a well-structured table with clear column headers and concise row values. Use 4-8 columns and 5-15 rows. All values must be strings. Columns should have descriptive titles relevant to the topic."
+    },
+    "chart": {
+      "schemaFile": "chart.schema.json",
+      "displayName": "Chart",
+      "category": "data",
+      "dataSource": "llm",
+      "supportedDataSources": ["llm", "api"],
+      "sizeHint": "medium",
+      "description": "Data visualization with support for bar, line, and pie charts. Works with LLM-generated data or a live API/database source.",
+      "compatibleDataTypes": ["chart", "graph", "visualization", "metrics", "statistics"],
+      "promptInstructions": "Generate a chart with meaningful labels and realistic data values. Choose chartType ('bar', 'line', or 'pie') based on what best visualises the data. Include a descriptive title. For bar/line use 4-8 labels; for pie use 3-6 slices."
+    },
+    "textBlock": {
+      "schemaFile": "textBlock.schema.json",
+      "displayName": "Text Block",
+      "category": "content",
+      "dataSource": "llm",
+      "sizeHint": "auto",
+      "description": "Rich text display with support for plain text, markdown, and code blocks. Includes copy functionality.",
+      "compatibleDataTypes": ["text", "content", "summary", "description", "code"],
+      "promptInstructions": "Generate rich, informative content. Use 'markdown' format for structured content with headers and lists. Use 'code' format for code snippets (set 'language' field). Use 'plain' for simple prose. Be comprehensive and specific to the topic."
+    },
+    "list": {
+      "schemaFile": "list.schema.json",
+      "displayName": "List",
+      "category": "content",
+      "dataSource": "llm",
+      "sizeHint": "small",
+      "description": "Key-value pairs or bullet list. Perfect for displaying properties, attributes, or enumerated items.",
+      "compatibleDataTypes": ["list", "items", "properties", "attributes"],
+      "promptInstructions": "Generate a comprehensive list of relevant properties or items. Use 'keyValue' style for properties with label+value pairs. Use 'bullet' style for plain enumerated items. Include 5-10 items for good density."
     }
   }
 }

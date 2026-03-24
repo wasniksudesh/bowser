@@ -44,6 +44,7 @@
     }
   },
   "additionalProperties": false,
+  "promptInstructions": "Generate a well-structured table with clear column headers and concise row values. Use 4-8 columns and 5-15 rows. All values must be strings. Columns should have descriptive titles relevant to the topic.",
   "example": {
     "columns": [
       {"id": "sha", "title": "SHA"},

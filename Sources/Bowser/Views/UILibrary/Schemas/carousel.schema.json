@@ -19,6 +19,7 @@
     "additionalProperties": false
   },
   "minItems": 1,
+  "promptInstructions": "Find 4-6 high-quality, relevant images. Use real image URLs from web search. Include specific, descriptive captions. Images should directly relate to the topic.",
   "example": [
     {
       "url": "https://example.com/image1.jpg",

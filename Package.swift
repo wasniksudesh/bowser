@@ -99,15 +99,27 @@ let package = Package(
             ]
         ),
 
-        // Unit tests for Bowser
-        // .testTarget(
-        //     name: "BowserTests",
-        //     dependencies: ["Bowser"],
-        //     path: "Tests/BowserTests",
-        //     swiftSettings: [
-        //         .enableExperimentalFeature("StrictConcurrency")
-        //     ]
-        // ),
+        // Minimal library containing only AppKit-dependent, CEF-free source
+        // files used by the test target. Avoids linking the full Bowser
+        // executable (which requires CEF framework) from unit tests.
+        .target(
+            name: "BowserTestSupport",
+            path: "Sources/BowserTestSupport",
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+            ]
+        ),
+
+        // Unit tests for Bowser — depends on BowserTestSupport (not the CEF
+        // executable) so swift-test can build and run without the app bundle.
+        .testTarget(
+            name: "BowserTests",
+            dependencies: ["BowserTestSupport"],
+            path: "Tests/BowserTests",
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        ),
     ],
     cxxLanguageStandard: .cxx17
 )

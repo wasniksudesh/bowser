@@ -15,3 +15,7 @@
 
 ### AI Backend
 1. if AI key is not configured, backend loops making call over and over to LLM with 5xx/4xx errors
+
+### TEST 
+1. UTs present. 
+2. ITs to add 

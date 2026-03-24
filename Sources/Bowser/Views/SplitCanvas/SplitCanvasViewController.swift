@@ -654,6 +654,9 @@ final class SplitPaneViewController: NSViewController, NSDraggingDestination, CE
             browserState.updateActiveTab(
                 url: url, isLoading: isLoading, canGoBack: canGoBack, canGoForward: canGoForward)
         }
+
+        // Dismiss the black loading overlay on first successful page load
+        currentBrowserView?.setLoadingState(isLoading)
     }
 
     func browserDidChangeTitle(_ title: String) {

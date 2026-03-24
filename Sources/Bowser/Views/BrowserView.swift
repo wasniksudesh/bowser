@@ -42,7 +42,7 @@ struct BrowserCanvas: NSViewRepresentable {
         let container = BrowserContainerView()
         container.identifier = NSUserInterfaceItemIdentifier("BrowserCanvas-\(pageId.uuidString)")
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        container.layer?.backgroundColor = NSColor.black.cgColor
 
         print("[BrowserCanvas] Created viewport container for page \(pageId)")
 
@@ -424,6 +424,10 @@ struct BrowserCanvas: NSViewRepresentable {
                     url: url, isLoading: isLoading, canGoBack: canGoBack, canGoForward: canGoForward
                 )
             }
+
+            // Dismiss the black loading overlay on first successful page load
+            BrowserManager.shared.existingBrowser(for: currentPageId)?.setLoadingState(isLoading)
+
             print("[Coordinator] =============================================\n")
         }
 
@@ -721,7 +725,7 @@ class BrowserContainerView: NSView {
 
     private func setupView() {
         wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        layer?.backgroundColor = NSColor.black.cgColor
     }
 
     /// Enable gesture recognition for page stack navigation
@@ -926,6 +930,16 @@ class CEFContainerView: NSView {
 
     /// Whether we're currently in a resize operation
     private var isResizing: Bool = false
+
+    /// Black overlay shown until the first page load completes
+    private var loadingOverlay: NSView?
+
+    /// Spinner shown on top of the black loading overlay
+    private var loadingSpinner: NSProgressIndicator?
+
+    /// Whether the first page load has finished (overlay is shown only until then)
+    private var hasCompletedFirstLoad: Bool = false
+
     // MARK: - Initialization
 
     override init(frame frameRect: NSRect) {
@@ -941,7 +955,7 @@ class CEFContainerView: NSView {
     private func setupView() {
         // Configure view for CEF hosting
         wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        layer?.backgroundColor = NSColor.black.cgColor
 
         // Enable layer-backed view for better compositing with CEF
         layerContentsRedrawPolicy = .onSetNeedsDisplay
@@ -958,7 +972,34 @@ class CEFContainerView: NSView {
             object: self
         )
 
+        setupLoadingOverlay()
+
         print("[CEFView] Container initialized with layer-backed rendering")
+    }
+
+    private func setupLoadingOverlay() {
+        let overlay = NSView(frame: bounds)
+        overlay.wantsLayer = true
+        overlay.layer?.backgroundColor = NSColor.black.cgColor
+        overlay.autoresizingMask = [.width, .height]
+
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .large
+        spinner.appearance = NSAppearance(named: .darkAqua)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        overlay.addSubview(spinner)
+
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
+        ])
+
+        spinner.startAnimation(nil)
+        addSubview(overlay)
+
+        loadingOverlay = overlay
+        loadingSpinner = spinner
     }
 
     deinit {
@@ -1020,6 +1061,26 @@ class CEFContainerView: NSView {
         }
         parentTabId = id
         print("[CEFView] Parent Tab ID set to: \(id)")
+    }
+
+    /// Show or hide the black loading overlay.
+    /// Call with `isLoading: false` once the first page load completes to fade the overlay out.
+    func setLoadingState(_ isLoading: Bool) {
+        guard !hasCompletedFirstLoad else { return }
+
+        if !isLoading {
+            hasCompletedFirstLoad = true
+            guard let overlay = loadingOverlay else { return }
+            loadingSpinner?.stopAnimation(nil)
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.35
+                overlay.animator().alphaValue = 0
+            }, completionHandler: {
+                overlay.removeFromSuperview()
+                self.loadingOverlay = nil
+                self.loadingSpinner = nil
+            })
+        }
     }
 
     /// Notify CEF that a split resize operation is starting.

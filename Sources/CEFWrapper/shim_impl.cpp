@@ -1346,6 +1346,8 @@ CefBrowserHandle cef_create_browser(void *parent_view, const char *url,
 
   // Configure browser settings
   CefBrowserSettings browser_settings;
+  // Opaque black prevents the white flash before the first page paint
+  browser_settings.background_color = CefColorSetARGB(255, 0, 0, 0);
 
   // Create browser synchronously
   CefString cef_url;

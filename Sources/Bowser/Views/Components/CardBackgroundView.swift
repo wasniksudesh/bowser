@@ -8,27 +8,20 @@ import AppKit
 // MARK: - Card Background View
 // =============================================================================
 
-/// Theme-aware opaque background for the floating web content card.
-/// Uses NSVisualEffectView for proper light/dark mode adaptation.
-/// The card must be OPAQUE to contrast against the translucent backdrop.
+/// Solid black background for the floating web content card.
+/// Pure black prevents any white flash while pages are loading.
 struct CardBackgroundView: NSViewRepresentable {
-    
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        // Use .windowBackground for an opaque, theme-aware surface.
-        // This contrasts with the translucent .sidebar backdrop.
-        view.material = .windowBackground
-        view.blendingMode = .withinWindow
-        view.state = .active
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
         view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.black.cgColor
         view.layer?.cornerRadius = ArcTheme.cardCornerRadius
         view.layer?.masksToBounds = true
         return view
     }
-    
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        // Material and appearance adapt automatically via system appearance
-    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 // =============================================================================

@@ -65,8 +65,11 @@ struct HomescreenBottomBar: View {
         HStack(spacing: 8) {
             ForEach(dockFolders) { folder in
                 DockFolderIcon(folder: folder) {
-                    browserState.loadFolder(id: folder.id)
                     appNav.openFolder(folder.id)
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(50))
+                        browserState.loadFolder(id: folder.id)
+                    }
                 }
             }
         }

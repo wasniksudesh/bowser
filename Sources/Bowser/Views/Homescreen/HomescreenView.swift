@@ -89,9 +89,12 @@ struct HomescreenView: View {
     // MARK: - Actions
 
     private func openFolder(_ folder: Folder) {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+        // Switch screen first so the transition animation can begin immediately,
+        // then load folder data after a brief yield to avoid blocking the first frame.
+        appNav.openFolder(folder.id)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
             browserState.loadFolder(id: folder.id)
-            appNav.openFolder(folder.id)
         }
     }
 

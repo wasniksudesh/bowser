@@ -14,34 +14,35 @@ struct RootView: View {
     @Bindable var appNav: AppNavigationState
     @Bindable var browserState: BrowserState
 
+    /// Tracks whether the browser shell has been instantiated at least once.
+    /// Keeps AppShellView alive after first open so subsequent transitions are
+    /// a simple opacity crossfade with no view-construction cost.
+    @State private var hasBrowserBeenOpened = false
+
     var body: some View {
+        let isHome = appNav.isShowingHomescreen
         ZStack {
-            switch appNav.currentScreen {
-            case .homescreen:
-                HomescreenView(appNav: appNav, browserState: browserState)
-                    .transition(homescreenTransition)
-            case .browser:
+            // Homescreen is always present — zero construction cost on return
+            HomescreenView(appNav: appNav, browserState: browserState)
+                .opacity(isHome ? 1 : 0)
+                .allowsHitTesting(isHome)
+                .zIndex(isHome ? 1 : 0)
+
+            // Browser shell is created on first open and then kept alive so that
+            // every subsequent homescreen ↔ browser transition is instantaneous.
+            if hasBrowserBeenOpened {
                 AppShellView(browserState: browserState, appNav: appNav)
-                    .transition(browserTransition)
+                    .opacity(isHome ? 0 : 1)
+                    .allowsHitTesting(!isHome)
+                    .zIndex(isHome ? 0 : 1)
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: appNav.currentScreen)
-    }
-
-    // MARK: - Transitions
-
-    private var homescreenTransition: AnyTransition {
-        .asymmetric(
-            insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .center)),
-            removal: .opacity.combined(with: .scale(scale: 1.02, anchor: .center))
-        )
-    }
-
-    private var browserTransition: AnyTransition {
-        .asymmetric(
-            insertion: .opacity.combined(with: .scale(scale: 1.02, anchor: .center)),
-            removal: .opacity.combined(with: .scale(scale: 0.97, anchor: .center))
-        )
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: isHome)
+        .onChange(of: appNav.currentScreen) { _, newValue in
+            if case .browser = newValue {
+                hasBrowserBeenOpened = true
+            }
+        }
     }
 }
 

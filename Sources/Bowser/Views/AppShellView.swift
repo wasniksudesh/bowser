@@ -19,8 +19,9 @@ import AppKit
 /// - `CommandBarView` - Modal search/navigation overlay
 /// - `TabPreviewCard` - Hover preview for tabs
 struct AppShellView: View {
-    
+
     @Bindable var browserState: BrowserState
+    @Bindable var appNav: AppNavigationState
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showCommandBar: Bool = false
     @State private var commandBarInitialText: String = ""
@@ -70,6 +71,7 @@ struct AppShellView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             ArcSidebarView(
                 browserState: browserState,
+                appNav: appNav,
                 showCommandBar: $showCommandBar,
                 isFullScreen: isFullScreen,
                 isSidebarCollapsed: isSidebarCollapsed
@@ -214,7 +216,7 @@ struct AppShellView: View {
 #if DEBUG
 struct AppShellView_Previews: PreviewProvider {
     static var previews: some View {
-        AppShellView(browserState: BrowserState())
+        AppShellView(browserState: BrowserState(), appNav: AppNavigationState())
             .frame(width: 1200, height: 800)
     }
 }

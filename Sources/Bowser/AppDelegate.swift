@@ -35,6 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Browser state managed by @Observable
     private let browserState = BrowserState()
 
+    /// Top-level navigation state (homescreen vs browser)
+    private let appNav = AppNavigationState()
+
     /// Timer for pumping CEF message loop
     private var cefMessageLoopTimer: Timer?
 
@@ -80,6 +83,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         print("[Bowser] Application terminating...")
+
+        // Persist current folder tabs before shutdown
+        browserState.saveCurrentFolder()
 
         // Stop CEF message loop timer first
         cefMessageLoopTimer?.invalidate()
@@ -240,10 +246,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             layoutConfig: layoutConfig
         )
 
-        // Create SwiftUI shell with Arc-style layout
+        // Create root view: switches between homescreen and browser
         // The AppShellView → ArcSidebarView → SidebarHeaderView chain uses
         // the same TrafficLightLayoutConfig for synchronized spacing
-        let shellView = AppShellView(browserState: browserState)
+        let shellView = RootView(appNav: appNav, browserState: browserState)
             .trafficLightLayoutConfig(layoutConfig)
 
         let hostingController = NSHostingController(rootView: shellView)

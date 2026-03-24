@@ -388,4 +388,21 @@ final class TabManager {
         tabs[index] = updatedTab
         invalidateTabCaches()
     }
+
+    /// Replace the entire tab list at once (used when switching folders).
+    /// Closes all current browser instances before replacing.
+    func replaceTabs(_ newTabs: [Tab]) {
+        // Close all current browser instances
+        for tab in tabs {
+            onTabClosed?(tab.id)
+        }
+
+        tabs = newTabs.isEmpty
+            ? [Tab(url: URL(string: "https://www.google.com")!, title: "Google")]
+            : newTabs
+        activeTabIndex = 0
+        invalidateTabCaches()
+        onActiveTabChanged?(activeTab)
+        print("[TabManager] Replaced tabs with \(tabs.count) entries")
+    }
 }

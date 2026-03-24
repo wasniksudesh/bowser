@@ -10,7 +10,7 @@ struct ShortcutsSettingsView: View {
       ShortcutRow(action: "Previous Tab", shortcut: "⌘⌥←")
       ShortcutRow(action: "Command Bar", shortcut: "⌘T")  // Note: Same as New Tab per plan
       ShortcutRow(action: "Settings", shortcut: "⌘,")
-      ShortcutRow(action: "New Space", shortcut: "⌘⇧N")
+      ShortcutRow(action: "New Folder", shortcut: "⌘⇧N")
     }
   }
 }

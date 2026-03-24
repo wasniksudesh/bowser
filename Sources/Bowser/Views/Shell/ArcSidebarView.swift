@@ -52,7 +52,7 @@ enum SidebarItem: Identifiable {
 /// 4. **Pinned Tabs** - Horizontal strip of pinned tabs
 /// 5. **Tab List** - Vertical list of open tabs
 /// 6. **AI Controls** - AI assistant status/actions
-/// 7. **Spaces Switcher** - Workspace tabs at bottom
+/// 7. **Home + Settings** - Bottom bar buttons
 ///
 /// ## Traffic Light Synchronization
 /// The `SidebarHeaderView` uses `TrafficLightLayoutConfig` to reserve exactly the space
@@ -64,6 +64,9 @@ enum SidebarItem: Identifiable {
 struct ArcSidebarView: View {
 
     @Bindable var browserState: BrowserState
+
+    /// Navigation state for transitioning back to homescreen
+    @Bindable var appNav: AppNavigationState
 
     /// Binding to parent's showCommandBar state
     @Binding var showCommandBar: Bool
@@ -160,9 +163,14 @@ struct ArcSidebarView: View {
             Spacer(minLength: 0)
 
             // ───────────────────────────────────────────────────────────
-            // Settings Button (Bottom Left)
+            // Bottom Bar: Home + Settings
             // ───────────────────────────────────────────────────────────
-            settingsButton
+            HStack(spacing: 4) {
+                homeButton
+                settingsButton
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
         }
         // ───────────────────────────────────────────────────────────────────
         // Transparent Sidebar Container
@@ -501,6 +509,37 @@ struct ArcSidebarView: View {
         }
     }
 
+    // MARK: - Home Button
+
+    /// Home button: saves current folder and returns to the homescreen
+    private var homeButton: some View {
+        Button {
+            browserState.saveCurrentFolder()
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                appNav.goHome()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "house.fill")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text("Home")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(0.03))
+        )
+        .help("Go to Homescreen")
+    }
+
     // MARK: - Settings Button
 
     /// Settings button at the bottom of the sidebar
@@ -528,8 +567,6 @@ struct ArcSidebarView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.primary.opacity(0.03))
         )
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
         .help("Open Settings")
     }
 }
@@ -543,6 +580,7 @@ struct ArcSidebarView: View {
         static var previews: some View {
             ArcSidebarView(
                 browserState: BrowserState(),
+                appNav: AppNavigationState(),
                 showCommandBar: .constant(false),
                 isFullScreen: false,
                 isSidebarCollapsed: .constant(false)

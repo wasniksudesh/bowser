@@ -39,8 +39,8 @@ final class BrowserState {
     /// Dedicated manager for favorites/bookmarks
     let favoritesStore: FavoritesStore
 
-    /// Dedicated manager for spaces/workspaces
-    let spacesManager: SpacesManager
+    /// Dedicated manager for desktop folders
+    let folderManager: FolderManager
 
     /// Floating dock state
     let floatingDockState: FloatingDockState
@@ -77,25 +77,10 @@ final class BrowserState {
         }
     }
 
-    // MARK: - Spaces (Backward Compatibility)
-    /// Backward compatibility: forwards to spacesManager
-    var spaces: [Space] {
-        spacesManager.spaces
-    }
+    // MARK: - Folder State
 
-    /// Currently active space index
-    /// Backward compatibility: forwards to spacesManager
-    var currentSpaceIndex: Int {
-        get { spacesManager.currentIndex }
-        set { spacesManager.switchTo(index: newValue) }
-    }
-
-    /// Currently active space
-    /// Backward compatibility: forwards to spacesManager
-    var currentSpace: Space {
-        get { spacesManager.currentSpace }
-        set { spacesManager.currentSpace = newValue }
-    }
+    /// The folder currently open in the browser (nil when on homescreen)
+    var currentFolderId: UUID?
 
     // MARK: - Navigation State (Delegating to NavigationState)
 
@@ -159,8 +144,7 @@ final class BrowserState {
     // MARK: - Storage Keys
 
     private static let favoritesStorageKey = "bowser.favorites"
-    private static let spacesStorageKey = "bowser.spaces"
-    private static let spacesIndexStorageKey = "bowser.spaces.currentIndex"
+    private static let foldersStorageKey = "bowser.folders"
 
     // MARK: - Initialization
 
@@ -193,20 +177,13 @@ final class BrowserState {
         }
         self.tabManager = TabManager(tabs: startupTabs)
 
-        // Initialize SpacesManager with UserDefaults persistence handlers
-        self.spacesManager = SpacesManager(
-            spacesPersistenceHandler: { data in
-                UserDefaults.standard.set(data, forKey: Self.spacesStorageKey)
+        // Initialize FolderManager with UserDefaults persistence handlers
+        self.folderManager = FolderManager(
+            persistenceHandler: { data in
+                UserDefaults.standard.set(data, forKey: Self.foldersStorageKey)
             },
-            indexPersistenceHandler: { index in
-                UserDefaults.standard.set(index, forKey: Self.spacesIndexStorageKey)
-            },
-            spacesLoadHandler: {
-                UserDefaults.standard.data(forKey: Self.spacesStorageKey)
-            },
-            indexLoadHandler: {
-                let index = UserDefaults.standard.integer(forKey: Self.spacesIndexStorageKey)
-                return index
+            loadHandler: {
+                UserDefaults.standard.data(forKey: Self.foldersStorageKey)
             }
         )
 
@@ -511,38 +488,47 @@ final class BrowserState {
         favoritesStore.remove(favorite)
     }
 
-    // MARK: - Space Actions (Delegating to SpacesManager)
+    // MARK: - Folder Actions
 
-    /// Switch to a specific space
-    /// Convenience method delegating to SpacesManager
-    func switchToSpace(_ space: Space) {
-        spacesManager.switchTo(space)
-        // TODO: Load tabs associated with this space
+    /// Load a folder's tabs and plans, replacing the current browser session.
+    /// Saves current folder before switching.
+    func loadFolder(id folderId: UUID) {
+        // Save current folder's tabs before switching
+        saveCurrentFolder()
+
+        // Load persisted tabs for this folder
+        let persistence = FolderTabPersistence.shared
+        if let savedTabs = persistence.loadTabs(forFolder: folderId), !savedTabs.isEmpty {
+            tabManager.replaceTabs(savedTabs)
+        } else {
+            // Fresh folder: start with a single Google tab
+            tabManager.replaceTabs([Tab(url: URL(string: "https://www.google.com")!, title: "Google")])
+        }
+
+        // Reset navigation state for new session
+        navigationState.addressBarText = activeTab?.url.absoluteString ?? "https://www.google.com"
+
+        // Scope plan storage to this folder
+        planState = PlanState(storageManager: PlanStorageManager(folderId: folderId))
+
+        // Reset agent state for new folder context
+        agentState = AgentState()
+
+        currentFolderId = folderId
+        print("[BrowserState] Loaded folder \(folderId)")
     }
 
-    /// Navigate to the next space
-    /// Convenience method delegating to SpacesManager
-    func nextSpace() {
-        spacesManager.next()
+    /// Persist the current tabs for the active folder.
+    func saveCurrentFolder() {
+        guard let folderId = currentFolderId else { return }
+        FolderTabPersistence.shared.saveTabs(tabManager.tabs, forFolder: folderId)
+        print("[BrowserState] Saved folder \(folderId)")
     }
 
-    /// Navigate to the previous space
-    /// Convenience method delegating to SpacesManager
-    func previousSpace() {
-        spacesManager.previous()
-    }
-
-    /// Create a new space
-    /// Convenience method delegating to SpacesManager
+    /// Create a new folder and immediately open it in the browser.
     @discardableResult
-    func createSpace(name: String? = nil, color: Color? = nil) -> Space {
-        spacesManager.create(name: name, color: color)
-    }
-
-    /// Delete a space
-    /// Convenience method delegating to SpacesManager
-    func deleteSpace(_ space: Space) {
-        spacesManager.delete(space)
+    func createFolder(name: String) -> Folder {
+        folderManager.createFolder(name: name)
     }
 
     // MARK: - Navigation Actions

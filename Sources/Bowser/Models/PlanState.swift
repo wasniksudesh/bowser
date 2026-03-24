@@ -20,9 +20,10 @@ import SwiftUI
 final class PlanState {
 
   /// Storage manager for multi-plan persistence
-  private let storageManager = PlanStorageManager.shared
+  private let storageManager: PlanStorageManager
 
-  init() {
+  init(storageManager: PlanStorageManager = .shared) {
+    self.storageManager = storageManager
     loadAvailablePlans()
   }
 

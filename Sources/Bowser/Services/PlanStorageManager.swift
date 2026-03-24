@@ -11,46 +11,60 @@ import Foundation
 // MARK: - Plan Storage Manager
 // =============================================================================
 
-/// Manages file-based persistence for multiple plans
-/// Plans are stored in ~/Library/Application Support/Bowser/Plans/
+/// Manages file-based persistence for multiple plans.
+/// Plans are stored in:
+///   - Global: ~/Library/Application Support/Bowser/Plans/
+///   - Per-folder: ~/Library/Application Support/Bowser/Folders/{folderId}/Plans/
 @MainActor
 final class PlanStorageManager {
-    
-    /// Shared singleton instance
+
+    /// Shared singleton instance (global plans, no folder scope)
     static let shared = PlanStorageManager()
-    
+
     /// Directory where plans are stored
     private let plansDirectory: URL
-    
+
     /// Index file containing all plan metadata
     private let indexFileURL: URL
-    
+
     /// Cached plan metadata for quick access
     private var cachedIndex: [PlanMetadata] = []
-    
+
     // MARK: - Initialization
-    
+
+    /// Create the global shared instance (stored in Bowser/Plans/)
     private init() {
-        // Get Application Support directory
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first!
-        
-        // Create Bowser/Plans directory
         self.plansDirectory = appSupport
             .appendingPathComponent("Bowser")
             .appendingPathComponent("Plans")
-        
         self.indexFileURL = plansDirectory.appendingPathComponent("index.json")
-        
-        // Ensure directory exists
         try? FileManager.default.createDirectory(
             at: plansDirectory,
             withIntermediateDirectories: true
         )
-        
-        // Load index on init
+        loadIndex()
+    }
+
+    /// Create a folder-scoped instance (stored in Bowser/Folders/{folderId}/Plans/)
+    init(folderId: UUID) {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first!
+        self.plansDirectory = appSupport
+            .appendingPathComponent("Bowser")
+            .appendingPathComponent("Folders")
+            .appendingPathComponent(folderId.uuidString)
+            .appendingPathComponent("Plans")
+        self.indexFileURL = plansDirectory.appendingPathComponent("index.json")
+        try? FileManager.default.createDirectory(
+            at: plansDirectory,
+            withIntermediateDirectories: true
+        )
         loadIndex()
     }
     

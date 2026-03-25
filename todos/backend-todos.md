@@ -15,7 +15,12 @@
 
 ### AI Backend
 1. if AI key is not configured, backend loops making call over and over to LLM with 5xx/4xx errors
+2. Chat Bubbles: scrape/fetch real webpage content and send to LLM instead of just the URL
 
-### TEST 
-1. UTs present. 
+### TEST  
 2. ITs to add 
+
+### Features 
+1. Snapshot, Downladed Files -> Not implemented
+2. "Files" button should show all Notes, Snapshots, DownloadedFiles. 
+3. Implement fly-cut.

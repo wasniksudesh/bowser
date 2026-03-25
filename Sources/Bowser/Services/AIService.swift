@@ -103,6 +103,17 @@ final class AIService: Sendable {
         let result = try JSONDecoder().decode(ResolveURLResponse.self, from: data)
         return result.url
     }
+
+    /// Execute a task using the LangChain AI agent (supports tools & web search)
+    func executeTask(task: String, context: [String: String]? = nil) async throws -> String {
+        let body = try JSONEncoder().encode(AITaskRequest(task: task, context: context))
+        let data = try await performRequest(method: "POST", path: "/api/ai/execute", body: body)
+        let result = try JSONDecoder().decode(AITaskResponse.self, from: data)
+        guard result.success, let output = result.output else {
+            throw AIServiceError.taskFailed(message: result.error ?? "Unknown error")
+        }
+        return output
+    }
 }
 
 // =============================================================================
@@ -145,6 +156,24 @@ struct ResolveURLResponse: Codable, Sendable {
     let steps: [String]
 }
 
+struct AITaskRequest: Codable, Sendable {
+    let task: String
+    let context: [String: String]?
+    let user_id: String
+
+    init(task: String, context: [String: String]? = nil, user_id: String = "default") {
+        self.task = task
+        self.context = context
+        self.user_id = user_id
+    }
+}
+
+struct AITaskResponse: Codable, Sendable {
+    let success: Bool
+    let output: String?
+    let error: String?
+}
+
 // =============================================================================
 // MARK: - Errors
 // =============================================================================
@@ -154,6 +183,7 @@ enum AIServiceError: Error, LocalizedError {
     case httpError(statusCode: Int)
     case decodingError(Error)
     case configurationFailed(message: String)
+    case taskFailed(message: String)
 
     var errorDescription: String? {
         switch self {
@@ -165,6 +195,8 @@ enum AIServiceError: Error, LocalizedError {
             return "Failed to decode AI response: \(error.localizedDescription)"
         case .configurationFailed(let message):
             return "Configuration failed: \(message)"
+        case .taskFailed(let message):
+            return "AI task failed: \(message)"
         }
     }
 }

@@ -106,19 +106,22 @@ struct FloatingWebCanvasView: View {
                 } else {
                     ZStack {
                         if isStackMode {
-                            // Stacked page navigation
                             StackedCanvasView(browserState: browserState, tabId: activeTab.id)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
-                            // Normal split canvas
                             SplitCanvasView(browserState: browserState, isFullScreen: isFullScreen)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
 
-                        // Bottom dock (only visible in stack mode)
                         if isStackMode {
                             BottomPageDock(browserState: browserState, tabId: activeTab.id)
                         }
+
+                        ChatBubbleOverlay(
+                            chatState: activeTab.chatBubbleState,
+                            tabURL: activeTab.url
+                        )
+                        .zIndex(900)
                     }
                 }
             } else {

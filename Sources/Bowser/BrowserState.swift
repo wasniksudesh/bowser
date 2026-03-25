@@ -655,6 +655,9 @@ struct Tab: Identifiable, Equatable, @unchecked Sendable {
     /// Index of the currently active page in the stack
     var activePageIndex: Int
 
+    /// Per-tab AI chat bubble state (reference type, survives tab mutations)
+    let chatBubbleState: ChatBubbleState
+
     // MARK: - Computed Properties
 
     /// Currently active/focused pane
@@ -794,6 +797,8 @@ struct Tab: Identifiable, Equatable, @unchecked Sendable {
         self.stackModeEnabled = stackModeEnabled
         self.pages = []
         self.activePageIndex = 0
+
+        self.chatBubbleState = ChatBubbleState()
     }
 
     // MARK: - Pane Mutations
@@ -826,5 +831,6 @@ struct Tab: Identifiable, Equatable, @unchecked Sendable {
             && lhs.stackModeEnabled == rhs.stackModeEnabled && lhs.pages == rhs.pages
             && lhs.activePageIndex == rhs.activePageIndex
             && lhs.tabType == rhs.tabType && lhs.noteId == rhs.noteId
+            && lhs.chatBubbleState === rhs.chatBubbleState
     }
 }

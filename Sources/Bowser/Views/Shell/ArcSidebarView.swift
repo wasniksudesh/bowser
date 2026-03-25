@@ -581,8 +581,15 @@ struct ArcSidebarView: View {
 
         return LazyVGrid(columns: columns, spacing: 6) {
             toolGridItem(icon: "arrow.down.circle", label: "Downloads") { }
-            toolGridItem(icon: "camera", label: "Snapshot") { }
-            toolGridItem(icon: "doc", label: "Files") { }
+            toolGridItem(icon: "camera", label: "Snapshot") {
+                browserState.snapshotService.startCapture()
+            }
+            toolGridItem(icon: "clock.arrow.circlepath", label: "Timeline") {
+                if let folderId = browserState.currentFolderId {
+                    let timelineId = Note.timelineNoteId(forFolder: folderId)
+                    browserState.openNoteTab(noteId: timelineId, title: "Timeline")
+                }
+            }
             toolGridItem(icon: "note.text", label: "New Note") {
                 browserState.createNoteTab()
             }

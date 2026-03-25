@@ -122,6 +122,12 @@ struct FloatingWebCanvasView: View {
                             tabURL: activeTab.url
                         )
                         .zIndex(900)
+
+                        selectionPopupOverlay
+                            .zIndex(950)
+
+                        copiedToastOverlay
+                            .zIndex(960)
                     }
                 }
             } else {
@@ -175,6 +181,10 @@ struct FloatingWebCanvasView: View {
         // consistent padding controlled by cardPadding.
         // ─────────────────────────────────────────────────────────────
         .ignoresSafeArea(.all, edges: isFullScreen ? .all : [.top, .bottom])
+        .onChange(of: browserState.activeTabIndex) { _, _ in
+            browserState.selectionMonitor.dismiss()
+            browserState.snapshotService.dismiss()
+        }
     }
     
     // MARK: - Empty Tab View
@@ -184,6 +194,84 @@ struct FloatingWebCanvasView: View {
         Text("No tab selected")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .foregroundColor(.secondary)
+    }
+
+    // MARK: - Selection Popup Overlay
+
+    /// Shows the floating popup bar when text is selected or a snapshot is captured.
+    @ViewBuilder
+    private var selectionPopupOverlay: some View {
+        let hasSelection = browserState.selectionMonitor.selectedText != nil
+        let hasSnapshot = browserState.snapshotService.capturedImage != nil
+
+        if hasSelection || hasSnapshot {
+            SelectionPopupBar(
+                browserState: browserState,
+                selectedText: browserState.selectionMonitor.selectedText,
+                capturedImage: browserState.snapshotService.capturedImage,
+                sourceURL: hasSelection
+                    ? browserState.selectionMonitor.sourceURL
+                    : browserState.snapshotService.sourceURL,
+                screenPosition: hasSelection
+                    ? browserState.selectionMonitor.selectionScreenPosition
+                    : browserState.snapshotService.snapshotScreenPosition,
+                onDismiss: {
+                    browserState.selectionMonitor.dismiss()
+                    browserState.snapshotService.dismiss()
+                }
+            )
+        }
+    }
+
+    // MARK: - Copied Toast Overlay
+
+    @ViewBuilder
+    private var copiedToastOverlay: some View {
+        CopiedToastView(trigger: browserState.snapshotService.capturedImage != nil)
+    }
+}
+
+// =============================================================================
+// MARK: - Copied Toast View
+// =============================================================================
+
+/// Brief "Copied to clipboard" toast that auto-fades and auto-removes.
+private struct CopiedToastView: View {
+    var trigger: Bool
+    @State private var showToast = false
+
+    var body: some View {
+        Group {
+            if showToast {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Label("Copied to clipboard", systemImage: "doc.on.clipboard")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.ultraThickMaterial, in: Capsule())
+                            .shadow(color: .black.opacity(0.1), radius: 8, y: 2)
+                        Spacer()
+                    }
+                    .padding(.bottom, 60)
+                }
+                .transition(.opacity)
+                .allowsHitTesting(false)
+            }
+        }
+        .animation(.easeOut(duration: 0.3), value: showToast)
+        .onChange(of: trigger) { _, newValue in
+            if newValue {
+                showToast = true
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(2))
+                    showToast = false
+                }
+            }
+        }
     }
 }
 

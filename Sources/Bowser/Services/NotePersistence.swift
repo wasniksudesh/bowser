@@ -83,8 +83,12 @@ final class NotePersistence {
         return rebuildIndex(forFolder: folderId)
     }
 
-    /// Delete a note from disk.
+    /// Delete a note from disk. Timeline notes cannot be deleted.
     func deleteNote(id noteId: UUID, forFolder folderId: UUID) {
+        if let note = loadNote(id: noteId, forFolder: folderId), note.isTimeline {
+            print("[NotePersistence] Cannot delete timeline note \(noteId)")
+            return
+        }
         let fileURL = notesDirectory(for: folderId)
             .appendingPathComponent("\(noteId.uuidString).json")
         try? FileManager.default.removeItem(at: fileURL)

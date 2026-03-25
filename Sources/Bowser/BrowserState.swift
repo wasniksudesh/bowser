@@ -58,6 +58,12 @@ final class BrowserState {
     /// Extension manager for Chrome extensions
     let extensionManager: ExtensionManager
 
+    /// Monitors text selection in web pages
+    let selectionMonitor: WebSelectionMonitor
+
+    /// Manages screenshot-style snapshot capture
+    let snapshotService: SnapshotCaptureService
+
     // MARK: - Tab State (Delegating to TabManager)
 
     /// List of all open tabs (delegated to TabManager)
@@ -174,8 +180,16 @@ final class BrowserState {
         // Initialize ExtensionManager (must be done before loading extensions)
         self.extensionManager = ExtensionManager(browserState: nil)
 
+        // Initialize selection monitor and snapshot service
+        self.selectionMonitor = WebSelectionMonitor()
+        self.snapshotService = SnapshotCaptureService()
+
         // Set initial address bar text
         navigationState.addressBarText = "https://www.google.com"
+
+        // Attach services that need a back-reference to self
+        selectionMonitor.attach(to: self)
+        snapshotService.attach(to: self)
 
         // Set callbacks after self is fully initialized
         tabManager.onTabClosed = { tabId in
@@ -232,6 +246,19 @@ final class BrowserState {
             NotePersistence.shared.saveNote(note, forFolder: folderId)
         }
         let tab = tabManager.createNoteTab(noteId: note.id, title: note.title)
+        addressBarText = ""
+        return tab
+    }
+
+    /// Open an existing note by ID (e.g. the Timeline note).
+    /// If a tab for this note is already open, switches to it instead of creating a duplicate.
+    @discardableResult
+    func openNoteTab(noteId: UUID, title: String) -> Tab {
+        if let existing = tabManager.tabs.first(where: { $0.noteId == noteId }) {
+            tabManager.selectTab(id: existing.id)
+            return existing
+        }
+        let tab = tabManager.createNoteTab(noteId: noteId, title: title)
         addressBarText = ""
         return tab
     }
@@ -466,6 +493,9 @@ final class BrowserState {
         agentState = AgentState()
 
         currentFolderId = folderId
+
+        TimelineService.shared.ensureTimelineNote(forFolder: folderId)
+
         print("[BrowserState] Loaded folder \(folderId)")
     }
 

@@ -254,13 +254,25 @@ private struct MessageBubbleView: View {
         HStack {
             if message.role == .user { Spacer(minLength: 40) }
 
-            Text(message.content)
-                .font(ArcTheme.tabTitleFont)
-                .foregroundStyle(.primary)
-                .textSelection(.enabled)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
+                if let nsImage = message.image {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: 260, maxHeight: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+
+                if !message.content.isEmpty && message.image == nil {
+                    Text(message.content)
+                        .font(ArcTheme.tabTitleFont)
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             if message.role == .assistant { Spacer(minLength: 40) }
         }

@@ -1,6 +1,7 @@
 // ChatBubbleState.swift - Per-Tab AI Chat Bubble State
 // Manages multiple AI chat conversations scoped to a single browser tab
 
+import AppKit
 import Foundation
 
 // =============================================================================
@@ -16,16 +17,18 @@ enum BubbleMessageRole: Sendable {
 // MARK: - Bubble Chat Message
 // =============================================================================
 
-struct BubbleChatMessage: Identifiable, Sendable {
+struct BubbleChatMessage: Identifiable, @unchecked Sendable {
     let id: UUID
     let role: BubbleMessageRole
     let content: String
+    let image: NSImage?
     let timestamp: Date
 
-    init(id: UUID = UUID(), role: BubbleMessageRole, content: String, timestamp: Date = Date()) {
+    init(id: UUID = UUID(), role: BubbleMessageRole, content: String, image: NSImage? = nil, timestamp: Date = Date()) {
         self.id = id
         self.role = role
         self.content = content
+        self.image = image
         self.timestamp = timestamp
     }
 }

@@ -283,6 +283,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showSettingsWindow()
             }
         }
+        NotificationCenter.default.addObserver(forName: .toggleSettings, object: nil, queue: .main) {
+            [weak self] _ in
+            Task { @MainActor in
+                self?.toggleSettingsWindow()
+            }
+        }
+    }
+
+    func toggleSettingsWindow() {
+        if let window = settingsWindow, window.isVisible {
+            window.close()
+            return
+        }
+        showSettingsWindow()
     }
 
     @objc func showSettingsWindow() {

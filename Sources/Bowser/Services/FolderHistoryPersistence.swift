@@ -2,6 +2,23 @@
 // Stores each folder's history as JSON in ~/Library/Application Support/Bowser/Folders/{id}/history.json
 
 import Foundation
+import SwiftUI
+
+// =============================================================================
+// MARK: - Global History Entry
+// =============================================================================
+
+/// A browsing history item annotated with its originating folder metadata.
+/// Used by the homescreen global history sidebar to show cross-folder history.
+struct GlobalHistoryEntry: Identifiable {
+    let item: BrowsingHistoryItem
+    let folderId: UUID
+    let folderName: String
+    let folderColor: Color
+    let folderIcon: String
+
+    var id: UUID { item.id }
+}
 
 // =============================================================================
 // MARK: - Folder History Persistence
@@ -85,6 +102,27 @@ final class FolderHistoryPersistence {
     func deleteFolder(_ folderId: UUID) {
         let fileURL = historyFile(for: folderId)
         try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    /// Load browsing history across all folders, annotated with folder metadata.
+    /// Returns entries sorted by timestamp (most recent first).
+    func loadAllHistory(folders: [Folder]) -> [GlobalHistoryEntry] {
+        var allEntries: [GlobalHistoryEntry] = []
+        for folder in folders {
+            let items = loadHistory(forFolder: folder.id)
+            let entries = items.map { item in
+                GlobalHistoryEntry(
+                    item: item,
+                    folderId: folder.id,
+                    folderName: folder.name,
+                    folderColor: folder.color,
+                    folderIcon: folder.icon
+                )
+            }
+            allEntries.append(contentsOf: entries)
+        }
+        allEntries.sort { $0.item.timestamp > $1.item.timestamp }
+        return allEntries
     }
 
     // MARK: - Private

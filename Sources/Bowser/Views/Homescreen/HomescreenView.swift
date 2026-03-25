@@ -17,23 +17,34 @@ struct HomescreenView: View {
     @State private var showingNewFolderSheet = false
     @State private var newFolderName = ""
     @State private var newFolderAlertPresented = false
+    @State private var showingHistorySidebar = true
+    @State private var historySearchText = ""
 
     private var folderManager: FolderManager { browserState.folderManager }
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Unified vibrancy backdrop (matches browser backdrop)
             UnifiedBackdropView()
                 .ignoresSafeArea()
 
-            // Folder grid canvas
-            folderGridCanvas
+            HStack(spacing: 0) {
+                // Left sidebar: global history
+                if showingHistorySidebar {
+                    historySidebar
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+
+                // Main content: folder grid
+                folderGridCanvas
+            }
 
             // Bottom dock bar
             HomescreenBottomBar(
                 browserState: browserState,
                 appNav: appNav,
-                onCreateFolder: { presentNewFolderPrompt() }
+                onCreateFolder: { presentNewFolderPrompt() },
+                searchText: $historySearchText,
+                showingHistorySidebar: $showingHistorySidebar
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -44,6 +55,49 @@ struct HomescreenView: View {
         } message: {
             Text("Enter a name for the new folder")
         }
+    }
+
+    // MARK: - History Sidebar
+
+    private var historySidebar: some View {
+        VStack(spacing: 0) {
+            // Search bar inside sidebar
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                TextField("Search history", text: $historySearchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                if !historySearchText.isEmpty {
+                    Button {
+                        historySearchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.primary.opacity(0.06))
+            )
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+
+            GlobalHistoryView(
+                browserState: browserState,
+                appNav: appNav,
+                searchText: $historySearchText
+            )
+        }
+        .frame(width: 260)
+        .background(.ultraThinMaterial)
     }
 
     // MARK: - Folder Grid Canvas

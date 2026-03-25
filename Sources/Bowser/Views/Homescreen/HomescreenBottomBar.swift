@@ -14,8 +14,9 @@ struct HomescreenBottomBar: View {
     @Bindable var browserState: BrowserState
     @Bindable var appNav: AppNavigationState
     let onCreateFolder: () -> Void
+    @Binding var searchText: String
+    @Binding var showingHistorySidebar: Bool
 
-    @State private var searchText = ""
     @State private var currentTime = Date()
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -44,8 +45,20 @@ struct HomescreenBottomBar: View {
                     .frame(height: 24)
                     .padding(.horizontal, 10)
 
-                // Search field — fills remaining space between divider and clock
+                // Search field — fills remaining space
                 searchField
+
+                Divider()
+                    .frame(height: 24)
+                    .padding(.horizontal, 10)
+
+                // History & Settings buttons
+                historyButton
+                settingsButton
+
+                Divider()
+                    .frame(height: 24)
+                    .padding(.horizontal, 10)
 
                 // Right: Clock
                 clockView
@@ -57,7 +70,7 @@ struct HomescreenBottomBar: View {
                     .fill(.ultraThinMaterial)
                     .shadow(color: .black.opacity(0.18), radius: 20, y: -4)
             )
-            .frame(maxWidth: 700)
+            .frame(maxWidth: 780)
 
             Spacer(minLength: 0)
         }
@@ -116,6 +129,50 @@ struct HomescreenBottomBar: View {
         )
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 8)
+    }
+
+    // MARK: - History Button
+
+    private var historyButton: some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                showingHistorySidebar.toggle()
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(showingHistorySidebar
+                          ? Color.accentColor.opacity(0.18)
+                          : Color.primary.opacity(0.07))
+                    .frame(width: 28, height: 28)
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(showingHistorySidebar ? .primary : .secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .help(showingHistorySidebar ? "Hide History" : "Show History")
+
+    }
+
+    // MARK: - Settings Button
+
+    private var settingsButton: some View {
+        Button {
+            NotificationCenter.default.post(name: .toggleSettings, object: nil)
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color.primary.opacity(0.07))
+                    .frame(width: 28, height: 28)
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .help("Settings")
+        .padding(.leading, 4)
     }
 
     // MARK: - Clock

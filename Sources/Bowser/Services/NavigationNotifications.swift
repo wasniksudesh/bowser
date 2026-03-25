@@ -74,4 +74,7 @@ extension Notification.Name {
 
     /// Show Settings Window
     static let showSettings = Notification.Name("showSettings")
+
+    /// Toggle Settings Window (open if closed, close if open)
+    static let toggleSettings = Notification.Name("toggleSettings")
 }

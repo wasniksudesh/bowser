@@ -1,5 +1,6 @@
 // RootView.swift - Top-level composition root
-// Switches between HomescreenView and AppShellView based on AppNavigationState
+// Gates the app behind license verification, then switches between
+// HomescreenView and AppShellView based on AppNavigationState
 
 import SwiftUI
 
@@ -8,11 +9,13 @@ import SwiftUI
 // =============================================================================
 
 /// The top-level view hosted by the main window.
-/// Switches between the homescreen desktop and the browser interface.
+/// First verifies the license, then switches between the homescreen and browser.
 struct RootView: View {
 
     @Bindable var appNav: AppNavigationState
     @Bindable var browserState: BrowserState
+
+    @State private var licenseState: LicenseCheckState = .checking
 
     /// Tracks whether the browser shell has been instantiated at least once.
     /// Keeps AppShellView alive after first open so subsequent transitions are
@@ -20,16 +23,48 @@ struct RootView: View {
     @State private var hasBrowserBeenOpened = false
 
     var body: some View {
+        Group {
+            switch licenseState {
+            case .checking:
+                ZStack {
+                    UnifiedBackdropView()
+                        .ignoresSafeArea()
+                    ProgressView("Verifying license...")
+                        .controlSize(.large)
+                }
+
+            case .needsLicense:
+                LicenseView {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        licenseState = .verified
+                    }
+                }
+
+            case .verified:
+                browserContent
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            licenseState = await LicenseService.shared.initialCheckState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .licenseRevoked)) { _ in
+            withAnimation(.easeInOut(duration: 0.3)) {
+                licenseState = .needsLicense
+            }
+        }
+    }
+
+    // MARK: - Browser Content (post-license)
+
+    private var browserContent: some View {
         let isHome = appNav.isShowingHomescreen
-        ZStack {
-            // Homescreen is always present — zero construction cost on return
+        return ZStack {
             HomescreenView(appNav: appNav, browserState: browserState)
                 .opacity(isHome ? 1 : 0)
                 .allowsHitTesting(isHome)
                 .zIndex(isHome ? 1 : 0)
 
-            // Browser shell is created on first open and then kept alive so that
-            // every subsequent homescreen ↔ browser transition is instantaneous.
             if hasBrowserBeenOpened {
                 AppShellView(browserState: browserState, appNav: appNav)
                     .opacity(isHome ? 0 : 1)
@@ -44,6 +79,14 @@ struct RootView: View {
             }
         }
     }
+}
+
+// =============================================================================
+// MARK: - License Notification
+// =============================================================================
+
+extension Notification.Name {
+    static let licenseRevoked = Notification.Name("bowser.licenseRevoked")
 }
 
 // =============================================================================

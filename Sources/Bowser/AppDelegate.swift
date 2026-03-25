@@ -41,6 +41,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Timer for pumping CEF message loop
     private var cefMessageLoopTimer: Timer?
 
+    /// Task handle for the daily license re-verification loop
+    private var licenseCheckTask: Task<Void, Never>?
+
     /// Whether CEF was successfully initialized
     private var cefInitialized: Bool = false
 
@@ -78,6 +81,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await checkSidecarHealth()
         }
 
+        // Start daily license re-verification
+        startDailyLicenseCheck()
+
         print("[Bowser] Application ready")
     }
 
@@ -86,6 +92,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Persist current folder tabs before shutdown
         browserState.saveCurrentFolder()
+
+        // Cancel daily license check
+        licenseCheckTask?.cancel()
+        licenseCheckTask = nil
 
         // Stop CEF message loop timer first
         cefMessageLoopTimer?.invalidate()
@@ -685,6 +695,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func handlePrint() {
         guard let activeTab = browserState.activeTab else { return }
         BrowserManager.shared.printPage(pageId: activeTab.id)
+    }
+
+    // MARK: - License Re-verification
+
+    private func startDailyLicenseCheck() {
+        let interval: TimeInterval = 24 * 60 * 60  // 24 hours
+        licenseCheckTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled else { break }
+
+                let valid = await LicenseService.shared.checkStoredLicense()
+                if !valid {
+                    print("[Bowser] Daily license check failed — grace period may have expired")
+                    await MainActor.run {
+                        NotificationCenter.default.post(name: .licenseRevoked, object: nil)
+                    }
+                } else {
+                    print("[Bowser] Daily license check passed")
+                }
+            }
+        }
     }
 
     // MARK: - Backend Connection (Dev/Production)

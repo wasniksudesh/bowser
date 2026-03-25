@@ -17,6 +17,16 @@ enum PanelMode: String, Codable {
 }
 
 // =============================================================================
+// MARK: - Tab Type Enum
+// =============================================================================
+
+/// Distinguishes between web tabs (browser) and note tabs (rich text editor)
+enum TabType: String, Codable {
+    case web
+    case note
+}
+
+// =============================================================================
 // MARK: - Browser State (Observable)
 // =============================================================================
 
@@ -211,6 +221,18 @@ final class BrowserState {
     func createTab(url: URL = URL(string: "https://www.google.com")!) -> Tab {
         let tab = tabManager.createTab(url: url)
         addressBarText = tab.url.absoluteString
+        return tab
+    }
+
+    /// Create a new note tab: persists an empty Note and opens a note tab for it
+    @discardableResult
+    func createNoteTab() -> Tab {
+        let note = Note()
+        if let folderId = currentFolderId {
+            NotePersistence.shared.saveNote(note, forFolder: folderId)
+        }
+        let tab = tabManager.createNoteTab(noteId: note.id, title: note.title)
+        addressBarText = ""
         return tab
     }
 
@@ -614,6 +636,12 @@ struct Tab: Identifiable, Equatable, @unchecked Sendable {
     var isPinned: Bool
     var cachedPreview: NSImage?  // Tab preview snapshot for hover display
 
+    /// Discriminator: .web for browser tabs, .note for rich-text note tabs
+    var tabType: TabType
+
+    /// Links to the persisted Note document when tabType == .note
+    var noteId: UUID?
+
     // MARK: - Stacked Page Navigation
 
     /// Whether stack mode is enabled for this tab
@@ -740,7 +768,9 @@ struct Tab: Identifiable, Equatable, @unchecked Sendable {
         cachedPreview: NSImage? = nil,
         canGoBack: Bool = false,
         canGoForward: Bool = false,
-        stackModeEnabled: Bool = false
+        stackModeEnabled: Bool = false,
+        tabType: TabType = .web,
+        noteId: UUID? = nil
     ) {
         self.id = id
         self.parentTabId = parentTabId
@@ -757,6 +787,8 @@ struct Tab: Identifiable, Equatable, @unchecked Sendable {
         self.activePaneId = pane.id
         self.isPinned = isPinned
         self.cachedPreview = cachedPreview
+        self.tabType = tabType
+        self.noteId = noteId
 
         // Stack mode initialization
         self.stackModeEnabled = stackModeEnabled
@@ -793,5 +825,6 @@ struct Tab: Identifiable, Equatable, @unchecked Sendable {
             && lhs.cachedPreview === rhs.cachedPreview
             && lhs.stackModeEnabled == rhs.stackModeEnabled && lhs.pages == rhs.pages
             && lhs.activePageIndex == rhs.activePageIndex
+            && lhs.tabType == rhs.tabType && lhs.noteId == rhs.noteId
     }
 }

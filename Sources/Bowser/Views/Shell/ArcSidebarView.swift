@@ -580,15 +580,17 @@ struct ArcSidebarView: View {
         ]
 
         return LazyVGrid(columns: columns, spacing: 6) {
-            toolGridItem(icon: "arrow.down.circle", label: "Downloads")
-            toolGridItem(icon: "camera", label: "Snapshot")
-            toolGridItem(icon: "doc", label: "Files")
-            toolGridItem(icon: "note.text", label: "New Note")
+            toolGridItem(icon: "arrow.down.circle", label: "Downloads") { }
+            toolGridItem(icon: "camera", label: "Snapshot") { }
+            toolGridItem(icon: "doc", label: "Files") { }
+            toolGridItem(icon: "note.text", label: "New Note") {
+                browserState.createNoteTab()
+            }
         }
     }
 
-    private func toolGridItem(icon: String, label: String) -> some View {
-        Button { } label: {
+    private func toolGridItem(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .medium))

@@ -99,20 +99,26 @@ struct FloatingWebCanvasView: View {
                 GenerativeUIView(planState: browserState.planState, browserState: browserState)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let activeTab = browserState.activeTab {
-                ZStack {
-                    if isStackMode {
-                        // Stacked page navigation
-                        StackedCanvasView(browserState: browserState, tabId: activeTab.id)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        // Normal split canvas
-                        SplitCanvasView(browserState: browserState, isFullScreen: isFullScreen)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    
-                    // Bottom dock (only visible in stack mode)
-                    if isStackMode {
-                        BottomPageDock(browserState: browserState, tabId: activeTab.id)
+                if activeTab.tabType == .note, let noteId = activeTab.noteId {
+                    NoteEditorView(noteId: noteId, browserState: browserState)
+                        .id(noteId)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ZStack {
+                        if isStackMode {
+                            // Stacked page navigation
+                            StackedCanvasView(browserState: browserState, tabId: activeTab.id)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            // Normal split canvas
+                            SplitCanvasView(browserState: browserState, isFullScreen: isFullScreen)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+
+                        // Bottom dock (only visible in stack mode)
+                        if isStackMode {
+                            BottomPageDock(browserState: browserState, tabId: activeTab.id)
+                        }
                     }
                 }
             } else {

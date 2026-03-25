@@ -236,8 +236,13 @@ struct TabTreeRowView: View {
     @ViewBuilder
     private var faviconView: some View {
         let size: CGFloat = 16
-        
-        if let icon = tab.icon {
+
+        if tab.tabType == .note {
+            Image(systemName: "note.text")
+                .font(.system(size: size - 3))
+                .foregroundStyle(.secondary)
+                .frame(width: size, height: size)
+        } else if let icon = tab.icon {
             Image(nsImage: icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)

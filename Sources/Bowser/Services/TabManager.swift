@@ -131,6 +131,22 @@ final class TabManager {
         return tab
     }
 
+    /// Create a note tab and make it active
+    @discardableResult
+    func createNoteTab(noteId: UUID, title: String = "Untitled Note") -> Tab {
+        let tab = Tab(
+            url: URL(string: "about:blank")!,
+            title: title,
+            tabType: .note,
+            noteId: noteId
+        )
+        tabs.append(tab)
+        invalidateTabCaches()
+        activeTabIndex = tabs.count - 1
+        onActiveTabChanged?(tab)
+        return tab
+    }
+
     /// Insert a tab into the tab list without changing the active tab.
     /// Used by the floating dock to register quick-access tabs with BrowserManager
     /// so that BrowserCanvas can create a CEF browser for previews.

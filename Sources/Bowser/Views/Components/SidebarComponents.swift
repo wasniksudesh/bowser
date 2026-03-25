@@ -119,8 +119,11 @@ struct PinnedTabView: View {
     
     @ViewBuilder
     private var faviconView: some View {
-        // Priority: icon (NSImage) > favicon (Data) > globe fallback
-        if let icon = tab.icon {
+        if tab.tabType == .note {
+            Image(systemName: "note.text")
+                .font(.system(size: 14))
+                .foregroundStyle(isActive ? .primary : .secondary)
+        } else if let icon = tab.icon {
             Image(nsImage: icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -316,8 +319,15 @@ struct TabRowView: View {
     
     @ViewBuilder
     private var faviconView: some View {
-        // Single favicon for tab
-        singleFaviconView(pane: tab.panes.first, isActivePane: true)
+        if tab.tabType == .note {
+            let size: CGFloat = 16
+            Image(systemName: "note.text")
+                .font(.system(size: size - 3))
+                .foregroundStyle(.secondary)
+                .frame(width: size, height: size)
+        } else {
+            singleFaviconView(pane: tab.panes.first, isActivePane: true)
+        }
     }
     
     @ViewBuilder
@@ -431,7 +441,11 @@ struct TabPreviewCard: View {
         HStack(spacing: 8) {
             // Favicon
             Group {
-                if let icon = tab.icon {
+                if tab.tabType == .note {
+                    Image(systemName: "note.text")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                } else if let icon = tab.icon {
                     Image(nsImage: icon)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -617,7 +631,12 @@ struct SplitGroupRowView: View {
     private func singleFavicon(for tab: Tab) -> some View {
         let size: CGFloat = 18
         
-        if let icon = tab.icon {
+        if tab.tabType == .note {
+            Image(systemName: "note.text")
+                .font(.system(size: size - 4))
+                .foregroundStyle(.secondary)
+                .frame(width: size, height: size)
+        } else if let icon = tab.icon {
             Image(nsImage: icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -786,7 +805,12 @@ struct SplitTabRowView: View {
     private var faviconView: some View {
         let size: CGFloat = 14
         
-        if let icon = tab.icon {
+        if tab.tabType == .note {
+            Image(systemName: "note.text")
+                .font(.system(size: size - 3))
+                .foregroundStyle(.secondary)
+                .frame(width: size, height: size)
+        } else if let icon = tab.icon {
             Image(nsImage: icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)

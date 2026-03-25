@@ -16,6 +16,8 @@ struct SerializedTab: Codable {
     let title: String
     let isPinned: Bool
     let parentTabId: UUID?
+    let tabType: String?
+    let noteId: UUID?
 
     init(from tab: Tab) {
         self.id = tab.id
@@ -23,16 +25,21 @@ struct SerializedTab: Codable {
         self.title = tab.title
         self.isPinned = tab.isPinned
         self.parentTabId = tab.parentTabId
+        self.tabType = tab.tabType == .web ? nil : tab.tabType.rawValue
+        self.noteId = tab.noteId
     }
 
     func toTab() -> Tab {
         let url = URL(string: self.url) ?? URL(string: "https://www.google.com")!
+        let resolvedTabType = tabType.flatMap { TabType(rawValue: $0) } ?? .web
         return Tab(
             id: id,
             parentTabId: parentTabId,
             url: url,
             title: title.isEmpty ? "New Tab" : title,
-            isPinned: isPinned
+            isPinned: isPinned,
+            tabType: resolvedTabType,
+            noteId: noteId
         )
     }
 }

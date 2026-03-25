@@ -15,6 +15,7 @@ struct FolderIconView: View {
     let onRename: (String) -> Void
     let onSetColor: (Color) -> Void
     let onDelete: () -> Void
+    var onDuplicate: (() -> Void)? = nil
 
     @State private var isHovering = false
     @State private var isRenaming = false
@@ -79,11 +80,13 @@ struct FolderIconView: View {
 
     @ViewBuilder
     private var contextMenuContent: some View {
-        Button {
-            renameText = folder.name
-            isRenaming = true
-        } label: {
-            Label("Rename", systemImage: "pencil")
+        if !folder.isMisc {
+            Button {
+                renameText = folder.name
+                isRenaming = true
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
         }
 
         Menu("Color") {
@@ -91,19 +94,27 @@ struct FolderIconView: View {
                 Button {
                     onSetColor(color)
                 } label: {
-                    // SwiftUI doesn't support colored menu items natively;
-                    // show the color name as a label
                     Text(colorName(color))
                 }
             }
         }
 
-        Divider()
+        if let onDuplicate {
+            Button {
+                onDuplicate()
+            } label: {
+                Label("Duplicate", systemImage: "doc.on.doc")
+            }
+        }
 
-        Button(role: .destructive) {
-            onDelete()
-        } label: {
-            Label("Delete Folder", systemImage: "trash")
+        if !folder.isMisc {
+            Divider()
+
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Delete Folder", systemImage: "trash")
+            }
         }
     }
 

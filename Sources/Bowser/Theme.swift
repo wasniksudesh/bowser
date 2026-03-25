@@ -191,19 +191,6 @@ enum ArcTheme {
     }
     
     // =========================================================================
-    // MARK: - Favorites Grid
-    // =========================================================================
-    
-    /// Favorite item corner radius (squircle)
-    static let favoriteCornerRadius: CGFloat = 14
-    
-    /// Favicon display size
-    static let faviconSize: CGFloat = 32
-    
-    /// Grid item spacing
-    static let gridSpacing: CGFloat = 16
-    
-    // =========================================================================
     // MARK: - Pinned Tabs
     // =========================================================================
     
@@ -225,11 +212,6 @@ enum ArcTheme {
     /// Tab title font
     static var tabTitleFont: Font {
         .system(size: 13)
-    }
-    
-    /// Favorite title font
-    static var favoriteTitleFont: Font {
-        .system(size: 10, weight: .medium)
     }
     
     // =========================================================================
@@ -266,6 +248,47 @@ enum ArcTheme {
         
         // Ensure layer backing for visual effects
         window.contentView?.wantsLayer = true
+    }
+}
+
+// =============================================================================
+// MARK: - Color Codable Support
+// =============================================================================
+
+extension Color: @retroactive Codable {
+    enum CodingKeys: String, CodingKey {
+        case red, green, blue, opacity
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let red = try container.decode(Double.self, forKey: .red)
+        let green = try container.decode(Double.self, forKey: .green)
+        let blue = try container.decode(Double.self, forKey: .blue)
+        let opacity = try container.decode(Double.self, forKey: .opacity)
+        self.init(.sRGB, red: red, green: green, blue: blue, opacity: opacity)
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var opacity: CGFloat = 0
+        
+        #if canImport(AppKit)
+        if let nsColor = NSColor(self).usingColorSpace(.sRGB) {
+            red = nsColor.redComponent
+            green = nsColor.greenComponent
+            blue = nsColor.blueComponent
+            opacity = nsColor.alphaComponent
+        }
+        #endif
+        
+        try container.encode(red, forKey: .red)
+        try container.encode(green, forKey: .green)
+        try container.encode(blue, forKey: .blue)
+        try container.encode(opacity, forKey: .opacity)
     }
 }
 

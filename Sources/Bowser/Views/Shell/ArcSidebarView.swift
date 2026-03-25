@@ -46,13 +46,12 @@ enum SidebarItem: Identifiable {
 /// This view replaces the original SidebarView + top AddressBar combination.
 ///
 /// ## Section Layout (top to bottom)
-/// 1. **Sidebar Header** - Traffic lights space + Sidebar toggle + Navigation buttons
-/// 2. **Sidebar URL Bar** - Compact address/search field
-/// 3. **Favorites Grid** - Quick access site icons
-/// 4. **Pinned Tabs** - Horizontal strip of pinned tabs
-/// 5. **Tab List** - Vertical list of open tabs
-/// 6. **AI Controls** - AI assistant status/actions
-/// 7. **Home + Settings** - Bottom bar buttons
+    /// 1. **Sidebar Header** - Traffic lights space + Sidebar toggle + Navigation buttons
+    /// 2. **Sidebar URL Bar** - Compact address/search field
+    /// 3. **Pinned Tabs** - Horizontal strip of pinned tabs
+    /// 4. **Tab List** - Vertical list of open tabs
+    /// 5. **AI Controls** - AI assistant status/actions
+    /// 6. **Tools + Home + History** - Bottom bar buttons
 ///
 /// ## Traffic Light Synchronization
 /// The `SidebarHeaderView` uses `TrafficLightLayoutConfig` to reserve exactly the space
@@ -91,6 +90,9 @@ struct ArcSidebarView: View {
 
     /// Whether the History panel is currently shown
     @State private var showingHistory = false
+
+    /// Whether the Tools panel is expanded
+    @State private var showingTools = false
 
     // MARK: - Cached Sidebar State (Performance Optimization)
 
@@ -141,11 +143,6 @@ struct ArcSidebarView: View {
             sidebarURLBarSection
 
             // ───────────────────────────────────────────────────────────────
-            // Favorites Grid
-            // ───────────────────────────────────────────────────────────────
-            favoritesSection
-
-            // ───────────────────────────────────────────────────────────────
             // Pinned Tabs
             // ───────────────────────────────────────────────────────────────
             pinnedTabsSection
@@ -170,19 +167,13 @@ struct ArcSidebarView: View {
             Spacer(minLength: 0)
 
             // ───────────────────────────────────────────────────────────
-            // Bottom Bar: Home + History + Settings
-            // Switches between horizontal (wide) and vertical (narrow)
+            // Bottom Bar: Tools (full width) + Home | History
             // ───────────────────────────────────────────────────────────
-            ViewThatFits(in: .horizontal) {
+            VStack(spacing: 4) {
+                toolsSection
                 HStack(spacing: 4) {
                     homeButton
                     historyButton
-                    settingsButton
-                }
-                VStack(spacing: 4) {
-                    homeButton
-                    historyButton
-                    settingsButton
                 }
             }
             .padding(.horizontal, 12)
@@ -227,57 +218,6 @@ struct ArcSidebarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
-    }
-
-    // MARK: - Favorites Section
-
-    private var favoritesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Section header
-            HStack {
-                Text("Favorites")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                Spacer()
-
-                Button {
-                    browserState.addCurrentPageToFavorites()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .opacity(0.7)
-                .help("Add current page to favorites")
-            }
-            .padding(.horizontal, 4)
-
-            // Favorites grid
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 44, maximum: 52), spacing: 8)],
-                spacing: 8
-            ) {
-                ForEach(browserState.favoritesStore.gridFavorites) { favorite in
-                    FavoriteItemView(
-                        favorite: favorite,
-                        onTap: {
-                            // Launcher pattern: always open in new tab
-                            browserState.openFavoriteInNewTab(favorite)
-                        }
-                    )
-                }
-
-                AddFavoriteButton {
-                    browserState.addCurrentPageToFavorites()
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 16)
     }
 
     // MARK: - Pinned Tabs Section
@@ -527,8 +467,8 @@ struct ArcSidebarView: View {
 
     // MARK: - Sidebar Bottom Button Helper
 
-    /// Uniform sidebar bottom button used for Home, History, and Settings.
-    /// All three share the same height and layout so they line up evenly.
+    /// Uniform sidebar bottom button used for Home and History.
+    /// Both share the same height and layout so they line up evenly.
     private func sidebarBottomButton(
         icon: String,
         label: String,
@@ -584,13 +524,89 @@ struct ArcSidebarView: View {
         .help("Browsing History")
     }
 
-    // MARK: - Settings Button
+    // MARK: - Tools Section
 
-    private var settingsButton: some View {
-        sidebarBottomButton(icon: "gearshape.fill", label: "Settings") {
-            NotificationCenter.default.post(name: .showSettings, object: nil)
+    private var toolsSection: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showingTools.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "wrench.and.screwdriver")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(showingTools ? .primary : .secondary)
+                    Text("Tools")
+                        .font(.system(size: 12))
+                        .foregroundStyle(showingTools ? .primary : .secondary)
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: showingTools ? "chevron.down" : "chevron.up")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showingTools {
+                toolsGrid
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 8)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
         }
-        .help("Open Settings")
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(showingTools ? 0.07 : 0.03))
+        )
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showingTools = hovering
+            }
+        }
+    }
+
+    // MARK: - Tools Grid
+
+    private var toolsGrid: some View {
+        let columns = [
+            GridItem(.flexible(), spacing: 6),
+            GridItem(.flexible(), spacing: 6),
+        ]
+
+        return LazyVGrid(columns: columns, spacing: 6) {
+            toolGridItem(icon: "arrow.down.circle", label: "Downloads")
+            toolGridItem(icon: "camera", label: "Snapshot")
+            toolGridItem(icon: "doc", label: "Files")
+            toolGridItem(icon: "note.text", label: "New Note")
+        }
+    }
+
+    private func toolGridItem(icon: String, label: String) -> some View {
+        Button { } label: {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text(label)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.primary.opacity(0.04))
+        )
     }
 }
 

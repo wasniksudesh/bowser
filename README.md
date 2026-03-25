@@ -18,9 +18,8 @@ A high-performance macOS browser shell built with a native hybrid architecture:
 │  │   Vibrancy)     │  │           CEF Browser Canvas)             │ │
 │  │                 │  │                                           │ │
 │  │  • SidebarURLBar│  │  ┌─────────────────────────────────────┐ │ │
-│  │  • Favorites    │  │  │                                     │ │ │
-│  │  • Pinned Tabs  │  │  │          CEF Web Content            │ │ │
-│  │  • Tab List     │  │  │                                     │ │ │
+│  │  • Pinned Tabs  │  │  │                                     │ │ │
+│  │  • Tab List     │  │  │          CEF Web Content            │ │ │
 │  │  • Spaces       │  │  │                                     │ │ │
 │  └─────────────────┘  │  └─────────────────────────────────────┘ │ │
 │                        └──────────────────────────────────────────┘ │
@@ -90,7 +89,7 @@ bowser-mac/
 │   │   │   │   ├── FloatingWebCanvasView.swift # Web content card
 │   │   │   │   └── SidebarURLBar.swift        # Compact URL bar
 │   │   │   └── Components/
-│   │   │       └── SidebarComponents.swift    # Tab/Favorite views
+│   │   │       └── SidebarComponents.swift    # Tab/Sidebar views
 │   │   ├── Window/
 │   │   │   └── FramelessWindow.swift    # Arc-style window chrome
 │   │   ├── CEF/

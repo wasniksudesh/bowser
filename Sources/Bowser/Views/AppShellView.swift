@@ -14,7 +14,7 @@ import AppKit
 ///
 /// ## Composed Components
 /// - `UnifiedBackdropView` - Full-window vibrant backdrop
-/// - `ArcSidebarView` - Complete sidebar with URL bar, favorites, tabs
+/// - `ArcSidebarView` - Complete sidebar with URL bar, tabs
 /// - `FloatingWebCanvasView` - Web content in floating card style
 /// - `CommandBarView` - Modal search/navigation overlay
 /// - `TabPreviewCard` - Hover preview for tabs

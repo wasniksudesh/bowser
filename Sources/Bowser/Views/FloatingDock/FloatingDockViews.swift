@@ -190,27 +190,35 @@ struct DockBarView: View {
 
   private func handleTabsIconClick() {
     withAnimation(ArcTheme.springAnimation) {
-      if dockState.selectedQuickAccessApp != nil {
-        // If an app was selected, switch to tab dropdown and clear app selection
+      switch dockState.currentState {
+      case .condensed:
         dockState.selectedQuickAccessApp = nil
         dockState.currentState = .tabDropdown
-      } else {
-        switch dockState.currentState {
-        case .condensed:
-          dockState.currentState = .tabDropdown
-        case .tabDropdown, .tabPreview:
-          dockState.currentState = .condensed
-        }
+      case .tabDropdown:
+        dockState.selectedQuickAccessApp = nil
+        dockState.currentState = .condensed
+      case .tabPreview:
+        // From any preview (app or tab), switch to tab dropdown
+        dockState.selectedQuickAccessApp = nil
+        dockState.currentState = .tabDropdown
       }
     }
   }
 
   private func openWebsiteInPreview(url: String, appName: String) {
-    // Check if we already have a tab for this app
+    // Toggle off if this app is already selected
+    if dockState.selectedQuickAccessApp == appName {
+      withAnimation(ArcTheme.springAnimation) {
+        dockState.selectedQuickAccessApp = nil
+        dockState.currentState = .condensed
+      }
+      return
+    }
+
+    // Reuse existing quick-access tab if it's still registered in tabManager
     if let tabId = dockState.quickAccessTabs[appName],
-      browserState.tabs.contains(where: { $0.id == tabId })
+      browserState.tabManager.tab(for: tabId) != nil
     {
-      // Switch to existing tab
       withAnimation(ArcTheme.springAnimation) {
         dockState.selectedQuickAccessApp = appName
         dockState.currentState = .tabPreview(tabId: tabId)
@@ -218,11 +226,28 @@ struct DockBarView: View {
       return
     }
 
-    // Create new tab if none exists
-    guard let websiteURL = URL(string: url) else { return }
-    let newTab = browserState.createTab(url: websiteURL)
+    guard let websiteURL = URL(string: url),
+      let host = websiteURL.host
+    else { return }
 
-    // Save tab ID mapping
+    let persistence = FolderTabPersistence.shared
+    let allFolderIds = browserState.folderManager.folders.map(\.id)
+
+    // Search all folders for an existing tab matching this host
+    if let (_, existingTab) = persistence.findTab(matchingHost: host, inFolders: allFolderIds) {
+      browserState.tabManager.insertBackgroundTab(existingTab)
+      dockState.quickAccessTabs[appName] = existingTab.id
+      withAnimation(ArcTheme.springAnimation) {
+        dockState.selectedQuickAccessApp = appName
+        dockState.currentState = .tabPreview(tabId: existingTab.id)
+      }
+      return
+    }
+
+    // No existing tab — create in the misc folder and register with tabManager
+    let newTab = Tab(url: websiteURL, title: appName)
+    persistence.appendTab(newTab, toFolder: Folder.miscId)
+    browserState.tabManager.insertBackgroundTab(newTab)
     dockState.quickAccessTabs[appName] = newTab.id
 
     withAnimation(ArcTheme.springAnimation) {
@@ -310,19 +335,25 @@ struct DockDragButton: View {
 }
 
 // =============================================================================
-// MARK: - Tab Dropdown View
+// MARK: - Tab Dropdown View (Finder Column View)
 // =============================================================================
 
-/// Dropdown panel showing searchable tab list
+/// Finder-style column view: folders on the left, tabs for selected folder on the right
 struct TabDropdownView: View {
   @Bindable var browserState: BrowserState
   @Bindable var dockState: FloatingDockState
 
-  var filteredTabs: [Tab] {
+  @State private var folderTabs: [Tab] = []
+
+  private var folders: [Folder] {
+    browserState.folderManager.sortedFolders
+  }
+
+  private var filteredTabs: [Tab] {
     if dockState.tabSearchQuery.isEmpty {
-      return browserState.tabs
+      return folderTabs
     }
-    return browserState.tabs.filter {
+    return folderTabs.filter {
       $0.title.localizedCaseInsensitiveContains(dockState.tabSearchQuery)
         || $0.url.absoluteString.localizedCaseInsensitiveContains(dockState.tabSearchQuery)
     }
@@ -330,7 +361,7 @@ struct TabDropdownView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      // Search bar
+      // Search bar spans full width
       HStack(spacing: 8) {
         Image(systemName: "magnifyingglass")
           .foregroundStyle(.secondary)
@@ -357,28 +388,155 @@ struct TabDropdownView: View {
       Divider()
         .background(Color.white.opacity(0.1))
 
-      // Tab list (no checkboxes, direct preview on click)
-      ScrollView {
-        LazyVStack(spacing: 0) {
-          ForEach(filteredTabs) { tab in
-            TabDropdownRow(
-              tab: tab,
-              onSelect: {
-                withAnimation(ArcTheme.springAnimation) {
-                  dockState.selectedQuickAccessApp = nil
-                  dockState.currentState = .tabPreview(tabId: tab.id)
-                }
-              }
-            )
-          }
-        }
+      // Two-column layout: folders | tabs
+      HStack(spacing: 0) {
+        // Left column: folder list
+        folderColumn
+          .frame(width: 160)
+
+        Divider()
+          .background(Color.white.opacity(0.1))
+
+        // Right column: tabs for selected folder
+        tabColumn
+          .frame(maxWidth: .infinity)
       }
       .frame(maxHeight: 280)
     }
     .frame(maxWidth: .infinity)
     .background(.ultraThickMaterial)
     .clipShape(RoundedRectangle(cornerRadius: 12))
-    .environment(\.colorScheme, .dark)  // Match dark theme
+    .environment(\.colorScheme, .dark)
+    .onAppear {
+      if dockState.selectedDropdownFolderId == nil, let first = folders.first {
+        dockState.selectedDropdownFolderId = first.id
+      }
+      loadTabsForSelectedFolder()
+    }
+    .onChange(of: dockState.selectedDropdownFolderId) { _, _ in
+      loadTabsForSelectedFolder()
+    }
+  }
+
+  // MARK: - Folder Column
+
+  private var folderColumn: some View {
+    ScrollView(.vertical, showsIndicators: false) {
+      LazyVStack(spacing: 0) {
+        ForEach(folders) { folder in
+          FolderColumnRow(
+            folder: folder,
+            isSelected: dockState.selectedDropdownFolderId == folder.id
+          ) {
+            dockState.selectedDropdownFolderId = folder.id
+          }
+        }
+      }
+      .padding(.vertical, 4)
+    }
+  }
+
+  // MARK: - Tab Column
+
+  private var tabColumn: some View {
+    Group {
+      if filteredTabs.isEmpty {
+        VStack(spacing: 6) {
+          Image(systemName: "tray")
+            .font(.system(size: 20))
+            .foregroundStyle(.tertiary)
+          Text(dockState.tabSearchQuery.isEmpty ? "No tabs" : "No matches")
+            .font(.system(size: 12))
+            .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        ScrollView(.vertical, showsIndicators: false) {
+          LazyVStack(spacing: 0) {
+            ForEach(filteredTabs) { tab in
+              TabDropdownRow(
+                tab: tab,
+                onSelect: {
+                  withAnimation(ArcTheme.springAnimation) {
+                    dockState.selectedQuickAccessApp = nil
+                    dockState.currentState = .tabPreview(tabId: tab.id)
+                  }
+                }
+              )
+            }
+          }
+          .padding(.vertical, 4)
+        }
+      }
+    }
+  }
+
+  // MARK: - Data Loading
+
+  private func loadTabsForSelectedFolder() {
+    guard let folderId = dockState.selectedDropdownFolderId else {
+      folderTabs = []
+      return
+    }
+
+    // If this is the currently active folder, use live tabs
+    if folderId == browserState.currentFolderId {
+      folderTabs = browserState.tabs
+    } else {
+      folderTabs = FolderTabPersistence.shared.loadTabs(forFolder: folderId) ?? []
+    }
+  }
+}
+
+// =============================================================================
+// MARK: - Folder Column Row
+// =============================================================================
+
+/// Row in the folder column of the dropdown
+struct FolderColumnRow: View {
+  let folder: Folder
+  let isSelected: Bool
+  let onSelect: () -> Void
+
+  @State private var isHovering = false
+
+  var body: some View {
+    Button(action: onSelect) {
+      HStack(spacing: 8) {
+        Image(systemName: folder.icon)
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(folder.color)
+          .symbolRenderingMode(.hierarchical)
+          .frame(width: 16)
+
+        Text(folder.name)
+          .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+          .foregroundStyle(isSelected ? .primary : .secondary)
+          .lineLimit(1)
+
+        Spacer()
+
+        if isSelected {
+          Image(systemName: "chevron.right")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.tertiary)
+        }
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 7)
+      .background(
+        RoundedRectangle(cornerRadius: 6)
+          .fill(isSelected ? folder.color.opacity(0.18) : (isHovering ? Color.white.opacity(0.06) : Color.clear))
+      )
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .padding(.horizontal, 4)
+    .onHover { hovering in
+      withAnimation(ArcTheme.hoverAnimation) {
+        isHovering = hovering
+      }
+    }
   }
 }
 
@@ -386,7 +544,7 @@ struct TabDropdownView: View {
 // MARK: - Tab Dropdown Row
 // =============================================================================
 
-/// Individual tab row in the dropdown (no checkbox)
+/// Individual tab row in the dropdown
 struct TabDropdownRow: View {
   let tab: Tab
   let onSelect: () -> Void
@@ -396,7 +554,6 @@ struct TabDropdownRow: View {
   var body: some View {
     Button(action: onSelect) {
       HStack(spacing: 10) {
-        // Favicon
         if let icon = tab.icon {
           Image(nsImage: icon)
             .resizable()
@@ -409,27 +566,29 @@ struct TabDropdownRow: View {
             .frame(width: 16, height: 16)
         }
 
-        // Title
         Text(tab.title.isEmpty ? "New Tab" : tab.title)
-          .font(.system(size: 13))
+          .font(.system(size: 12))
           .foregroundStyle(.primary)
           .lineLimit(1)
           .truncationMode(.tail)
 
         Spacer()
 
-        if tab.isLoading {
-          ProgressView()
-            .controlSize(.small)
-            .scaleEffect(0.7)
-        }
+        Text(tab.url.host ?? "")
+          .font(.system(size: 10))
+          .foregroundStyle(.tertiary)
+          .lineLimit(1)
       }
-      .padding(.horizontal, 12)
-      .padding(.vertical, 10)
-      .background(isHovering ? Color.white.opacity(0.08) : Color.clear)
+      .padding(.horizontal, 10)
+      .padding(.vertical, 7)
+      .background(
+        RoundedRectangle(cornerRadius: 6)
+          .fill(isHovering ? Color.white.opacity(0.08) : Color.clear)
+      )
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .padding(.horizontal, 4)
     .onHover { hovering in
       withAnimation(ArcTheme.hoverAnimation) {
         isHovering = hovering
@@ -448,10 +607,13 @@ struct TabPreviewView: View {
   @Bindable var dockState: FloatingDockState
   let tabId: UUID
 
+  private var resolvedTab: Tab? {
+    browserState.tabManager.tab(for: tabId)
+  }
+
   var body: some View {
     VStack(spacing: 0) {
-      if let tab = browserState.tabs.first(where: { $0.id == tabId }) {
-        // In stack mode, use the active page's browser; otherwise use tab ID as page ID
+      if let tab = resolvedTab {
         let previewPageId = tab.stackModeEnabled ? (tab.activePage?.browserId ?? tabId) : tabId
         BrowserCanvas(
           browserState: browserState,
@@ -459,11 +621,9 @@ struct TabPreviewView: View {
           parentTabId: tabId,
           url: tab.url
         )
-        // Allow canvas to take full available height (controlled by window size)
         .frame(maxHeight: .infinity)
       }
     }
-    // Allow view to take full available width (controlled by window size)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(.ultraThickMaterial)
     .clipShape(RoundedRectangle(cornerRadius: 12))

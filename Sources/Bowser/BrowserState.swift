@@ -36,9 +36,6 @@ final class BrowserState {
     /// Dedicated manager for navigation state (per active tab)
     let navigationState: NavigationState
 
-    /// Dedicated manager for favorites/bookmarks
-    let favoritesStore: FavoritesStore
-
     /// Dedicated manager for desktop folders
     let folderManager: FolderManager
 
@@ -61,21 +58,6 @@ final class BrowserState {
 
     /// Currently active tab (delegated to TabManager)
     var activeTab: Tab? { tabManager.activeTab }
-
-    // MARK: - Favorites (Backward Compatibility)
-
-    /// User's favorite/bookmarked sites for quick access grid
-    /// Backward compatibility: forwards to favoritesStore
-    var favorites: [Favorite] {
-        get { favoritesStore.favorites }
-        set {
-            // For backward compatibility with direct assignment
-            // In practice, use favoritesStore methods instead
-            for favorite in newValue where !favoritesStore.contains(url: favorite.url) {
-                favoritesStore.add(favorite)
-            }
-        }
-    }
 
     // MARK: - Folder State
 
@@ -143,7 +125,6 @@ final class BrowserState {
 
     // MARK: - Storage Keys
 
-    private static let favoritesStorageKey = "bowser.favorites"
     private static let foldersStorageKey = "bowser.folders"
 
     // MARK: - Initialization
@@ -152,16 +133,6 @@ final class BrowserState {
         // Initialize all sub-managers first (before capturing self in callbacks)
         self.settingsManager = SettingsManager()  // Initialize SettingsManager
         self.navigationState = NavigationState(settingsManager: self.settingsManager)  // Inject settings
-
-        // Initialize FavoritesStore with UserDefaults persistence handlers
-        self.favoritesStore = FavoritesStore(
-            persistenceHandler: { data in
-                UserDefaults.standard.set(data, forKey: Self.favoritesStorageKey)
-            },
-            loadHandler: {
-                UserDefaults.standard.data(forKey: Self.favoritesStorageKey)
-            }
-        )
 
         // Initialize TabManager with startup logic
         let startupTabs: [Tab]
@@ -298,31 +269,6 @@ final class BrowserState {
     /// Update icon for the active pane in the active tab
     func updateActiveTabIcon(_ icon: NSImage?) {
         tabManager.updateActiveTabIcon(icon)
-    }
-
-    // MARK: - Favorites Actions (Delegating to FavoritesStore)
-
-    /// Navigate to a favorite (legacy - loads in current tab)
-    func navigateToFavorite(_ favorite: Favorite) {
-        if activeTab != nil {
-            tabManager.updateTab(url: favorite.url, title: favorite.title)
-            addressBarText = favorite.url.absoluteString
-        } else {
-            createTab(url: favorite.url)
-        }
-    }
-
-    /// Open a favorite in a new tab (Launcher pattern)
-    /// Always opens in single view - if split view is open, it gets saved as a group
-    func openFavoriteInNewTab(_ favorite: Favorite) {
-        let newTab = tabManager.createTab(url: favorite.url, title: favorite.title)
-        addressBarText = favorite.url.absoluteString
-        print("[BrowserState] Opened favorite '\(favorite.title)' in new tab \(newTab.id)")
-
-        // If we have a split view open, save it and switch to single view
-        if splitTabIds.count > 1 {
-            saveSplitAndShowSingleTab(newTabId: newTab.id)
-        }
     }
 
     /// Save the current split layout as a group and switch to single tab view
@@ -471,23 +417,6 @@ final class BrowserState {
         }
     }
 
-    /// Add current page to favorites
-    /// Convenience method delegating to FavoritesStore
-    func addCurrentPageToFavorites() {
-        guard let tab = activeTab else { return }
-        favoritesStore.addFromPage(
-            url: tab.url,
-            title: tab.title,
-            favicon: tab.favicon
-        )
-    }
-
-    /// Remove a favorite
-    /// Convenience method delegating to FavoritesStore
-    func removeFavorite(_ favorite: Favorite) {
-        favoritesStore.remove(favorite)
-    }
-
     // MARK: - Folder Actions
 
     /// Load a folder's tabs and plans, replacing the current browser session.
@@ -519,9 +448,12 @@ final class BrowserState {
     }
 
     /// Persist the current tabs for the active folder.
+    /// Filters out quick-access dock tabs so they don't pollute folder contents.
     func saveCurrentFolder() {
         guard let folderId = currentFolderId else { return }
-        FolderTabPersistence.shared.saveTabs(tabManager.tabs, forFolder: folderId)
+        let dockTabIds = Set(floatingDockState.quickAccessTabs.values)
+        let folderTabs = tabManager.tabs.filter { !dockTabIds.contains($0.id) }
+        FolderTabPersistence.shared.saveTabs(folderTabs, forFolder: folderId)
         print("[BrowserState] Saved folder \(folderId)")
     }
 

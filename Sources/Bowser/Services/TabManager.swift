@@ -131,6 +131,15 @@ final class TabManager {
         return tab
     }
 
+    /// Insert a tab into the tab list without changing the active tab.
+    /// Used by the floating dock to register quick-access tabs with BrowserManager
+    /// so that BrowserCanvas can create a CEF browser for previews.
+    func insertBackgroundTab(_ tab: Tab) {
+        guard !tabs.contains(where: { $0.id == tab.id }) else { return }
+        tabs.append(tab)
+        invalidateTabCaches()
+    }
+
     /// Create a new child tab from an existing tab asynchronously
     /// The tab is created immediately but browser initialization happens in background
     /// - Parameters:

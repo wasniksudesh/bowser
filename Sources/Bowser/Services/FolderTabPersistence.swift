@@ -101,6 +101,28 @@ final class FolderTabPersistence {
         try? FileManager.default.removeItem(at: dir)
     }
 
+    /// Search all given folders for a tab whose URL host matches the target host.
+    /// Returns (folderId, tab) of the first match, or nil.
+    func findTab(matchingHost host: String, inFolders folderIds: [UUID]) -> (folderId: UUID, tab: Tab)? {
+        let lowered = host.lowercased()
+        for fid in folderIds {
+            guard let tabs = loadTabs(forFolder: fid) else { continue }
+            if let match = tabs.first(where: {
+                $0.url.host?.lowercased().contains(lowered) == true
+            }) {
+                return (fid, match)
+            }
+        }
+        return nil
+    }
+
+    /// Append a single tab to a folder's persisted tabs and save
+    func appendTab(_ tab: Tab, toFolder folderId: UUID) {
+        var tabs = loadTabs(forFolder: folderId) ?? []
+        tabs.append(tab)
+        saveTabs(tabs, forFolder: folderId)
+    }
+
     // MARK: - Private
 
     private func folderDirectory(for folderId: UUID) -> URL {

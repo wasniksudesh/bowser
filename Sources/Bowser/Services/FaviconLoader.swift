@@ -211,89 +211,6 @@ actor FaviconLoader {
         }
     }
     
-    // MARK: - Offline Favicon Fetching (For Favorites)
-    
-    /// Fetch best available favicon data for a URL (for offline/favorites use)
-    /// Strategy: Google high-res service (128px) -> favicon.ico fallback
-    /// - Parameter url: The website URL to fetch favicon for
-    /// - Returns: Favicon image data (Sendable)
-    /// - Throws: FaviconError if all strategies fail
-    func fetchBestIconData(for url: URL) async throws -> Data {
-        guard let host = url.host else {
-            throw FaviconError.invalidResponse
-        }
-        
-        let cacheKey = "favorite:\(host)"
-        
-        // Check memory cache first
-        if let cached = cache[cacheKey] {
-            return cached
-        }
-        
-        // Strategy 1: Google high-res favicon service (128px)
-        if let data = await fetchFromGoogleHighRes(host: host) {
-            cache[cacheKey] = data
-            saveToDisk(data: data, forKey: cacheKey)
-            return data
-        }
-        
-        // Strategy 2: Direct favicon.ico request
-        if let data = await fetchFaviconICO(from: url) {
-            cache[cacheKey] = data
-            saveToDisk(data: data, forKey: cacheKey)
-            return data
-        }
-        
-        throw FaviconError.downloadFailed(underlying: NSError(domain: "FaviconLoader", code: -1, userInfo: [NSLocalizedDescriptionKey: "All favicon strategies failed for \(host)"]))
-    }
-    
-    /// Fetch from Google's high-resolution favicon service
-    private func fetchFromGoogleHighRes(host: String) async -> Data? {
-        var components = URLComponents(string: googleFaviconService)
-        components?.queryItems = [
-            URLQueryItem(name: "domain", value: host),
-            URLQueryItem(name: "sz", value: "128")
-        ]
-        
-        guard let googleURL = components?.url else { return nil }
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(from: googleURL)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode),
-                  data.count > 100, // Filter out placeholder icons (typically very small)
-                  NSImage(data: data) != nil else {
-                return nil
-            }
-            return data
-        } catch {
-            print("[FaviconLoader] Google high-res fetch failed for \(host): \(error)")
-            return nil
-        }
-    }
-    
-    /// Fetch standard favicon.ico from website root
-    private func fetchFaviconICO(from url: URL) async -> Data? {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
-        components.path = "/favicon.ico"
-        components.query = nil
-        components.fragment = nil
-        
-        guard let faviconURL = components.url else { return nil }
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(from: faviconURL)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode),
-                  NSImage(data: data) != nil else {
-                return nil
-            }
-            return data
-        } catch {
-            print("[FaviconLoader] favicon.ico fetch failed for \(url.host ?? "unknown"): \(error)")
-            return nil
-        }
-    }
 }
 
 // =============================================================================
@@ -344,20 +261,6 @@ extension FaviconLoader {
         }
         
         return resizeImage(image, to: 32)
-    }
-    
-    /// Fetch best favicon for a URL (for favorites/offline use) and convert to NSImage
-    /// - Parameter url: The website URL to fetch favicon for
-    /// - Returns: NSImage of the favicon, or nil on failure
-    @MainActor
-    func fetchBestIcon(for url: URL) async -> NSImage? {
-        do {
-            let data = try await fetchBestIconData(for: url)
-            return NSImage(data: data)
-        } catch {
-            print("[FaviconLoader] fetchBestIcon failed for \(url): \(error)")
-            return nil
-        }
     }
     
     /// Resize image to standard size while preserving aspect ratio

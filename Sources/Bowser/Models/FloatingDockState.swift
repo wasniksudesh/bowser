@@ -36,14 +36,21 @@ final class FloatingDockState {
         case tabPreview(tabId: UUID)
     }
 
-    var currentState: DockUIState = .condensed
+    var currentState: DockUIState = .condensed {
+        didSet {
+            if currentState != oldValue {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("FloatingDockStateChanged"), object: nil)
+            }
+        }
+    }
 
     // MARK: - Quick Access Apps
 
     /// Currently selected quick-access app (YouTube, ChatGPT, WhatsApp, Gmail)
     var selectedQuickAccessApp: String? = nil
 
-    /// Map of app name to tab ID for persisting quick access tabs
+    /// Map of app name to tab ID for quick access tab tracking
     var quickAccessTabs: [String: UUID] = [:]
 
     // MARK: - Position
@@ -84,6 +91,11 @@ final class FloatingDockState {
 
     /// Search query for tab dropdown filtering
     var tabSearchQuery: String = ""
+
+    // MARK: - Folder Column View
+
+    /// Currently selected folder in the tab dropdown column view
+    var selectedDropdownFolderId: UUID? = nil
 
     // MARK: - Dock Search Bar
 

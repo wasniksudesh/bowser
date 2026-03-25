@@ -126,6 +126,9 @@ struct HomescreenView: View {
                             folderManager.delete(folder)
                             FolderTabPersistence.shared.deleteFolder(folder.id)
                             FolderHistoryPersistence.shared.deleteFolder(folder.id)
+                        },
+                        onDuplicate: {
+                            folderManager.copyFolder(folder)
                         }
                     )
                 }

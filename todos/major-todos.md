@@ -4,4 +4,5 @@ Webmcp standardizes browser <-> website elicitation. Rather than scanning the we
 ### PLAN mode 
 1. Plan mode should go agentic when user interacts in sub-steps. 
 
-### 
+### DOCK
+Rewrite doc based on folders. 

@@ -12,6 +12,11 @@ import SwiftUI
 /// Each folder owns its own set of tabs, plans, and agent sessions.
 struct Folder: Identifiable, Equatable, Sendable, Codable {
 
+    // MARK: - Well-Known IDs
+
+    /// Stable UUID for the "misc" folder so it survives across launches
+    static let miscId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
     // MARK: - Properties
 
     let id: UUID
@@ -22,6 +27,8 @@ struct Folder: Identifiable, Equatable, Sendable, Codable {
     var gridIndex: Int    // ordering in the auto-layout grid
 
     // MARK: - Computed Properties
+
+    var isMisc: Bool { id == Self.miscId }
 
     var iconLetter: String {
         String(name.prefix(1)).uppercased()
@@ -82,6 +89,18 @@ extension Folder {
         [.blue, .purple, .green, .orange, .pink, .cyan, .indigo, .red, .yellow, .teal]
     }
 
+    /// The permanent misc folder — always exists, cannot be deleted or renamed.
+    /// Uses gridIndex 0; actual sort order is enforced by FolderManager.sortedFolders.
+    static var misc: Folder {
+        Folder(
+            id: miscId,
+            name: "misc",
+            color: .gray,
+            icon: "tray.fill",
+            gridIndex: 0
+        )
+    }
+
     /// Default folders shown to new users, matching the homescreen mockup
     static var defaults: [Folder] {
         let items: [(name: String, color: Color, icon: String)] = [
@@ -92,7 +111,7 @@ extension Folder {
             ("Jira-1",     .pink,   "tray.fill"),
             ("Inc-123",    .cyan,   "number.circle.fill"),
         ]
-        return items.enumerated().map { index, item in
+        var folders = items.enumerated().map { index, item in
             Folder(
                 name: item.name,
                 color: item.color,
@@ -100,5 +119,7 @@ extension Folder {
                 gridIndex: index
             )
         }
+        folders.append(misc)
+        return folders
     }
 }

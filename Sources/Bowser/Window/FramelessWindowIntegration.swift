@@ -226,7 +226,6 @@ struct EnvironmentWrappedView<Content: View>: View {
 ///             
 ///             // Rest of sidebar content
 ///             sidebarURLBarSection
-///             favoritesSection
 ///             tabListSection
 ///             Spacer()
 ///         }

@@ -19,6 +19,7 @@ struct HomescreenView: View {
     @State private var newFolderAlertPresented = false
     @State private var showingHistorySidebar = true
     @State private var historySearchText = ""
+    @State private var searchState = HomescreenSearchState()
 
     private var folderManager: FolderManager { browserState.folderManager }
 
@@ -38,14 +39,41 @@ struct HomescreenView: View {
                 folderGridCanvas
             }
 
-            // Bottom dock bar
-            HomescreenBottomBar(
-                browserState: browserState,
-                appNav: appNav,
-                onCreateFolder: { presentNewFolderPrompt() },
-                searchText: $historySearchText,
-                showingHistorySidebar: $showingHistorySidebar
-            )
+            // Dismiss scrim when search results are showing
+            if searchState.showResults {
+                Color.black.opacity(0.15)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            searchState.dismiss()
+                        }
+                    }
+                    .transition(.opacity)
+            }
+
+            // Bottom dock bar + attached search card
+            VStack(spacing: 6) {
+                if searchState.showResults {
+                    HomescreenSearchResultsView(
+                        searchState: searchState,
+                        browserState: browserState
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
+                HomescreenBottomBar(
+                    browserState: browserState,
+                    appNav: appNav,
+                    onCreateFolder: { presentNewFolderPrompt() },
+                    searchText: $historySearchText,
+                    showingHistorySidebar: $showingHistorySidebar,
+                    onSearch: { query in
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            searchState.submitSearch(query: query)
+                        }
+                    }
+                )
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .alert("New Folder", isPresented: $newFolderAlertPresented) {

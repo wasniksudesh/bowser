@@ -16,6 +16,7 @@ struct HomescreenBottomBar: View {
     let onCreateFolder: () -> Void
     @Binding var searchText: String
     @Binding var showingHistorySidebar: Bool
+    var onSearch: (String) -> Void = { _ in }
 
     @State private var currentTime = Date()
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -120,6 +121,10 @@ struct HomescreenBottomBar: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
+                .onSubmit {
+                    let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !query.isEmpty { onSearch(query) }
+                }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)

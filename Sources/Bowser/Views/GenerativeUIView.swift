@@ -182,6 +182,14 @@ struct GenerativeUIView: View {
                 renderHighlightsTab(data: data, isLoading: isLoading)
             case "map":
                 renderMap(data: data, isLoading: isLoading)
+            case "table":
+                renderTable(data: data, isLoading: isLoading)
+            case "chart":
+                renderChart(data: data, isLoading: isLoading)
+            case "textblock":
+                renderTextBlock(data: data, isLoading: isLoading)
+            case "list":
+                renderList(data: data, isLoading: isLoading)
             default:
                 Text("Unknown component type: \(spec.type)")
                     .foregroundStyle(.secondary)
@@ -303,6 +311,74 @@ struct GenerativeUIView: View {
             )
         } else {
             MapsComponent(data: nil, isLoading: isLoading)
+        }
+    }
+    
+    @ViewBuilder
+    private func renderTable(data: Any?, isLoading: Bool) -> some View {
+        if let dict = data as? [String: Any],
+           let columnsArray = dict["columns"] as? [[String: Any]],
+           let rowsArray = dict["rows"] as? [[String]] {
+            let columns = columnsArray.compactMap { col -> TableColumn? in
+                guard let key = col["key"] as? String, let label = col["label"] as? String else { return nil }
+                return TableColumn(key: key, label: label)
+            }
+            TableComponent(data: TableData(columns: columns, rows: rowsArray), isLoading: false)
+        } else {
+            TableComponent(data: nil, isLoading: isLoading)
+        }
+    }
+    
+    @ViewBuilder
+    private func renderChart(data: Any?, isLoading: Bool) -> some View {
+        if let dict = data as? [String: Any],
+           let chartTypeStr = dict["chart_type"] as? String,
+           let chartType = ChartType(rawValue: chartTypeStr),
+           let labels = dict["labels"] as? [String],
+           let datasetsArray = dict["datasets"] as? [[String: Any]] {
+            let datasets = datasetsArray.compactMap { ds -> ChartDataset? in
+                guard let label = ds["label"] as? String else { return nil }
+                if let values = ds["values"] as? [Double] {
+                    return ChartDataset(label: label, values: values)
+                }
+                if let rawValues = ds["values"] as? [Any] {
+                    let values = rawValues.compactMap { ($0 as? NSNumber)?.doubleValue }
+                    guard !values.isEmpty else { return nil }
+                    return ChartDataset(label: label, values: values)
+                }
+                return nil
+            }
+            ChartComponent(data: ChartData(chartType: chartType, labels: labels, datasets: datasets), isLoading: false)
+        } else {
+            ChartComponent(data: nil, isLoading: isLoading)
+        }
+    }
+    
+    @ViewBuilder
+    private func renderTextBlock(data: Any?, isLoading: Bool) -> some View {
+        if let dict = data as? [String: Any],
+           let content = dict["content"] as? String {
+            let formatStr = dict["format"] as? String ?? "plain"
+            let format = TextFormat(rawValue: formatStr) ?? .plain
+            TextBlockComponent(data: TextBlockData(content: content, format: format), isLoading: false)
+        } else {
+            TextBlockComponent(data: nil, isLoading: isLoading)
+        }
+    }
+    
+    @ViewBuilder
+    private func renderList(data: Any?, isLoading: Bool) -> some View {
+        if let dict = data as? [String: Any],
+           let itemsArray = dict["items"] as? [[String: Any]] {
+            let items = itemsArray.map { item in
+                ListItem(
+                    label: item["label"] as? String ?? "",
+                    value: item["value"] as? String
+                )
+            }
+            ListComponent(data: ListData(items: items), isLoading: false)
+        } else {
+            ListComponent(data: nil, isLoading: isLoading)
         }
     }
     

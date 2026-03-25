@@ -4,28 +4,28 @@ overview: Fix copy/paste keyboard shortcuts in the CEF browser, redesign homescr
 todos:
   - id: fix-copy-paste
     content: "Bug fix: Remove target=self from Edit menu items, use nil target with standard editing selectors (copy:, paste:, cut:, etc.)"
-    status: pending
+    status: completed
   - id: folder-icons-smaller
     content: Reduce folder icon size (72->52), update grid sizing, assign distinct SF Symbol icons to default folders
-    status: pending
+    status: completed
   - id: bottom-bar-popover
     content: Add DockFolderPopover showing tabs/plans/agents as vertical list on folder click in bottom bar
-    status: pending
+    status: completed
   - id: bottom-bar-center
     content: Center bottom bar, limit max width, make search field flexible-width between folder icons and clock
-    status: pending
+    status: completed
   - id: history-model
     content: Create BrowsingHistoryItem model and FolderHistoryPersistence service for per-folder history storage
-    status: pending
+    status: completed
   - id: history-recording
     content: Record browsing history entries in Coordinator when pages finish loading
-    status: pending
+    status: completed
   - id: history-view
     content: Create HistoryView (Chrome-like) grouped by date with search, clear, and click-to-navigate
-    status: pending
+    status: completed
   - id: history-sidebar
     content: Add History button to ArcSidebarView bottom bar, wire up to show HistoryView
-    status: pending
+    status: completed
 isProject: false
 ---
 

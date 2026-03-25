@@ -14,3 +14,5 @@ Don’t auto-agree with everything I say. Don’t try to please me.
 Always check the code first before acting (to reduce hallucinations)
 Aim for the smallest possible code change.
 No requirement for backward compatibility, can always make breaking changes. 
+Use standard icons 
+Frontend changes should be consistent with overall theme of the project. 

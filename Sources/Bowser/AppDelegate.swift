@@ -381,56 +381,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         editMenuItem.submenu = editMenu
 
-        // Undo (CMD+Z)
+        // Undo (CMD+Z) — nil target lets the responder chain handle it (CEF, TextField, etc.)
         let undoItem = NSMenuItem(
             title: "Undo",
-            action: #selector(handleUndo),
+            action: Selector(("undo:")),
             keyEquivalent: "z"
         )
         undoItem.keyEquivalentModifierMask = .command
-        undoItem.target = self
         editMenu.addItem(undoItem)
 
         // Redo (Shift+CMD+Z)
         let redoItem = NSMenuItem(
             title: "Redo",
-            action: #selector(handleRedo),
+            action: Selector(("redo:")),
             keyEquivalent: "z"
         )
         redoItem.keyEquivalentModifierMask = [.command, .shift]
-        redoItem.target = self
         editMenu.addItem(redoItem)
 
         editMenu.addItem(NSMenuItem.separator())
 
-        // Cut (CMD+X)
+        // Cut (CMD+X) — standard selector, nil target → responder chain
         let cutItem = NSMenuItem(
             title: "Cut",
-            action: #selector(handleCut),
+            action: #selector(NSText.cut(_:)),
             keyEquivalent: "x"
         )
         cutItem.keyEquivalentModifierMask = .command
-        cutItem.target = self
         editMenu.addItem(cutItem)
 
         // Copy (CMD+C)
         let copyItem = NSMenuItem(
             title: "Copy",
-            action: #selector(handleCopy),
+            action: #selector(NSText.copy(_:)),
             keyEquivalent: "c"
         )
         copyItem.keyEquivalentModifierMask = .command
-        copyItem.target = self
         editMenu.addItem(copyItem)
 
         // Paste (CMD+V)
         let pasteItem = NSMenuItem(
             title: "Paste",
-            action: #selector(handlePaste),
+            action: #selector(NSText.paste(_:)),
             keyEquivalent: "v"
         )
         pasteItem.keyEquivalentModifierMask = .command
-        pasteItem.target = self
         editMenu.addItem(pasteItem)
 
         editMenu.addItem(NSMenuItem.separator())
@@ -438,11 +433,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Select All (CMD+A)
         let selectAllItem = NSMenuItem(
             title: "Select All",
-            action: #selector(handleSelectAll),
+            action: #selector(NSText.selectAll(_:)),
             keyEquivalent: "a"
         )
         selectAllItem.keyEquivalentModifierMask = .command
-        selectAllItem.target = self
         editMenu.addItem(selectAllItem)
 
         editMenu.addItem(NSMenuItem.separator())

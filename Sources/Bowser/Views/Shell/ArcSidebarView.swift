@@ -89,6 +89,9 @@ struct ArcSidebarView: View {
     /// Tab being dragged for reordering
     @State private var draggedTab: Tab?
 
+    /// Whether the History panel is currently shown
+    @State private var showingHistory = false
+
     // MARK: - Cached Sidebar State (Performance Optimization)
 
     /// Cached sidebar items to avoid expensive recomputation on every render
@@ -148,26 +151,39 @@ struct ArcSidebarView: View {
             pinnedTabsSection
 
             // ───────────────────────────────────────────────────────────────
-            // Panel Content (Tab List, Plan Mode, or Agent Mode)
-            // Switches based on browserState.currentPanelMode
+            // Panel Content (Tab List, Plan Mode, Agent Mode, or History)
+            // Switches based on browserState.currentPanelMode or showingHistory
             // ───────────────────────────────────────────────────────────────
-            switch browserState.currentPanelMode {
-            case .tab:
-                tabListSection
-            case .plan:
-                PlanModeView(browserState: browserState)
-            case .agent:
-                AgentSessionListView(browserState: browserState)
+            if showingHistory {
+                HistoryView(browserState: browserState)
+            } else {
+                switch browserState.currentPanelMode {
+                case .tab:
+                    tabListSection
+                case .plan:
+                    PlanModeView(browserState: browserState)
+                case .agent:
+                    AgentSessionListView(browserState: browserState)
+                }
             }
 
             Spacer(minLength: 0)
 
             // ───────────────────────────────────────────────────────────
-            // Bottom Bar: Home + Settings
+            // Bottom Bar: Home + History + Settings
+            // Switches between horizontal (wide) and vertical (narrow)
             // ───────────────────────────────────────────────────────────
-            HStack(spacing: 4) {
-                homeButton
-                settingsButton
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) {
+                    homeButton
+                    historyButton
+                    settingsButton
+                }
+                VStack(spacing: 4) {
+                    homeButton
+                    historyButton
+                    settingsButton
+                }
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 12)
@@ -509,64 +525,71 @@ struct ArcSidebarView: View {
         }
     }
 
+    // MARK: - Sidebar Bottom Button Helper
+
+    /// Uniform sidebar bottom button used for Home, History, and Settings.
+    /// All three share the same height and layout so they line up evenly.
+    private func sidebarBottomButton(
+        icon: String,
+        label: String,
+        isActive: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isActive ? .primary : .secondary)
+                Text(label)
+                    .font(.system(size: 12))
+                    .foregroundStyle(isActive ? .primary : .secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(isActive ? 0.07 : 0.03))
+        )
+    }
+
     // MARK: - Home Button
 
-    /// Home button: saves current folder and returns to the homescreen
     private var homeButton: some View {
-        Button {
+        sidebarBottomButton(icon: "house.fill", label: "Home") {
+            showingHistory = false
             browserState.saveCurrentFolder()
             withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                 appNav.goHome()
             }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "house.fill")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Text("Home")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.primary.opacity(0.03))
-        )
         .help("Go to Homescreen")
+    }
+
+    // MARK: - History Button
+
+    private var historyButton: some View {
+        sidebarBottomButton(
+            icon: showingHistory ? "clock.fill" : "clock",
+            label: "History",
+            isActive: showingHistory
+        ) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showingHistory.toggle()
+            }
+        }
+        .help("Browsing History")
     }
 
     // MARK: - Settings Button
 
-    /// Settings button at the bottom of the sidebar
     private var settingsButton: some View {
-        Button {
+        sidebarBottomButton(icon: "gearshape.fill", label: "Settings") {
             NotificationCenter.default.post(name: .showSettings, object: nil)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-
-                Text("Settings")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.primary.opacity(0.03))
-        )
         .help("Open Settings")
     }
 }

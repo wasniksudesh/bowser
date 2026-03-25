@@ -51,9 +51,9 @@ struct HomescreenView: View {
     private var folderGridCanvas: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 110, maximum: 130), spacing: 20)],
+                columns: [GridItem(.adaptive(minimum: 80, maximum: 100), spacing: 16)],
                 alignment: .leading,
-                spacing: 24
+                spacing: 18
             ) {
                 // Existing folders
                 ForEach(folderManager.sortedFolders) { folder in
@@ -71,6 +71,7 @@ struct HomescreenView: View {
                         onDelete: {
                             folderManager.delete(folder)
                             FolderTabPersistence.shared.deleteFolder(folder.id)
+                            FolderHistoryPersistence.shared.deleteFolder(folder.id)
                         }
                     )
                 }

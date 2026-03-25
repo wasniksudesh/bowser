@@ -84,12 +84,19 @@ extension Folder {
 
     /// Default folders shown to new users, matching the homescreen mockup
     static var defaults: [Folder] {
-        let colors: [Color] = [.blue, .purple, .green, .orange, .pink, .cyan]
-        let names = ["Project-A", "Task-XYZ", "Trip", "Homework", "Jira-1", "Inc-123"]
-        return names.enumerated().map { index, name in
+        let items: [(name: String, color: Color, icon: String)] = [
+            ("Project-A",  .blue,   "doc.text.fill"),
+            ("Task-XYZ",   .purple, "checkmark.circle.fill"),
+            ("Trip",       .green,  "airplane"),
+            ("Homework",   .orange, "book.fill"),
+            ("Jira-1",     .pink,   "tray.fill"),
+            ("Inc-123",    .cyan,   "number.circle.fill"),
+        ]
+        return items.enumerated().map { index, item in
             Folder(
-                name: name,
-                color: colors[index % colors.count],
+                name: item.name,
+                color: item.color,
+                icon: item.icon,
                 gridIndex: index
             )
         }

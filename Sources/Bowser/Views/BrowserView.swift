@@ -444,6 +444,21 @@ struct BrowserCanvas: NSViewRepresentable {
             } else {
                 browserState.updateActiveTab(title: title)
             }
+
+            // Record browsing history once the title has settled and the page isn't loading
+            if !title.isEmpty,
+               title != "Loading...",
+               let folderId = browserState.currentFolderId,
+               let currentURL = BrowserManager.shared.existingBrowser(for: currentPageId)?.currentURLString,
+               !currentURL.isEmpty,
+               !currentURL.hasPrefix("about:")
+            {
+                FolderHistoryPersistence.shared.addEntry(
+                    url: currentURL,
+                    title: title,
+                    forFolder: folderId
+                )
+            }
         }
 
         func browserDidChangeURL(_ url: URL) {

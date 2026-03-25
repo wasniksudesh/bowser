@@ -21,27 +21,27 @@ struct FolderIconView: View {
     @State private var renameText = ""
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             // Folder icon box
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(folder.color.opacity(isHovering ? 0.28 : 0.18))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: 12)
                             .strokeBorder(folder.color.opacity(isHovering ? 0.45 : 0.25), lineWidth: 1)
                     )
 
                 Image(systemName: folder.icon)
-                    .font(.system(size: 32, weight: .medium))
+                    .font(.system(size: 22, weight: .medium))
                     .foregroundStyle(folder.color)
                     .symbolRenderingMode(.hierarchical)
             }
-            .frame(width: 72, height: 72)
+            .frame(width: 52, height: 52)
             .scaleEffect(isHovering ? 1.06 : 1.0)
             .shadow(
                 color: folder.color.opacity(isHovering ? 0.25 : 0.0),
-                radius: 8,
-                y: 4
+                radius: 6,
+                y: 3
             )
             .animation(ArcTheme.hoverAnimation, value: isHovering)
 
@@ -49,9 +49,9 @@ struct FolderIconView: View {
             if isRenaming {
                 TextField("Folder name", text: $renameText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .multilineTextAlignment(.center)
-                    .frame(width: 90)
+                    .frame(width: 72)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
                     .background(
@@ -62,11 +62,11 @@ struct FolderIconView: View {
                     .onExitCommand { isRenaming = false }
             } else {
                 Text(folder.name)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.primary.opacity(0.85))
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
-                    .frame(width: 90)
+                    .frame(width: 72)
             }
         }
         .contentShape(Rectangle())
@@ -146,12 +146,12 @@ struct NewFolderButton: View {
     @State private var isHovering = false
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(Color.primary.opacity(isHovering ? 0.07 : 0.04))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: 12)
                             .strokeBorder(
                                 Color.primary.opacity(isHovering ? 0.25 : 0.12),
                                 style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])
@@ -159,17 +159,17 @@ struct NewFolderButton: View {
                     )
 
                 Image(systemName: "plus")
-                    .font(.system(size: 24, weight: .medium))
+                    .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(.secondary)
             }
-            .frame(width: 72, height: 72)
+            .frame(width: 52, height: 52)
             .scaleEffect(isHovering ? 1.04 : 1.0)
             .animation(ArcTheme.hoverAnimation, value: isHovering)
 
             Text("New Folder")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.tertiary)
-                .frame(width: 90)
+                .frame(width: 72)
         }
         .contentShape(Rectangle())
         .onTapGesture { onCreate() }

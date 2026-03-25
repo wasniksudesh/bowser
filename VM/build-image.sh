@@ -10,16 +10,28 @@
 # - LUKS utilities for encrypted storage
 # - Init system for proper startup
 #
-# Output: system.img (~500MB)
+# Output: system.img  (~500MB)
+#         vmlinuz     (kernel binary for VZLinuxBootLoader)
+#         initramfs   (initial ramdisk for VZLinuxBootLoader)
 # =============================================================================
 
 set -e
 
+# Detect host architecture and set matching Alpine arch for native VM execution
+if [[ "$(uname -m)" == "arm64" ]]; then
+    ALPINE_ARCH="aarch64"
+    DOCKER_PLATFORM="linux/arm64"
+else
+    ALPINE_ARCH="x86_64"
+    DOCKER_PLATFORM="linux/amd64"
+fi
+
 # Configuration
 ALPINE_VERSION="3.19"
-ALPINE_ARCH="x86_64"
 IMAGE_SIZE="1G"
 OUTPUT_IMAGE="system.img"
+OUTPUT_KERNEL="vmlinuz"
+OUTPUT_INITRAMFS="initramfs"
 MOUNT_POINT="alpine-root"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -58,7 +70,7 @@ check_prerequisites() {
 # =============================================================================
 
 create_base_image() {
-    log "Creating base Alpine Linux image..."
+    log "Creating base Alpine Linux image ($ALPINE_ARCH)..."
     
     # Remove old image if exists
     rm -f "$OUTPUT_IMAGE"
@@ -74,28 +86,40 @@ create_base_image() {
 # =============================================================================
 
 build_alpine_rootfs() {
-    log "Building Alpine Linux root filesystem..."
+    log "Building Alpine Linux root filesystem (platform: $DOCKER_PLATFORM)..."
     
     # Create temporary Dockerfile
-    cat > Dockerfile.alpine-build <<'EOF'
-FROM alpine:3.19
+    cat > Dockerfile.alpine-build <<EOF
+FROM --platform=${DOCKER_PLATFORM} alpine:${ALPINE_VERSION}
 
-# Install base system + Python + dependencies
-RUN apk add --no-cache \
-    alpine-base \
-    openrc \
-    python3 \
-    py3-pip \
-    cryptsetup \
-    util-linux \
-    e2fsprogs \
-    curl \
-    ca-certificates \
-    tzdata
+# Install base system + Python + dependencies + kernel for VZLinuxBootLoader
+RUN apk add --no-cache \\
+    alpine-base \\
+    openrc \\
+    python3 \\
+    py3-pip \\
+    cryptsetup \\
+    util-linux \\
+    e2fsprogs \\
+    curl \\
+    ca-certificates \\
+    tzdata \\
+    linux-virt \\
+    mkinitfs \\
+    gcc \\
+    g++ \\
+    musl-dev \\
+    linux-headers \\
+    python3-dev \\
+    cmake \\
+    make \\
+    ninja \\
+    patchelf \\
+    libffi-dev \\
+    openssl-dev
 
-# Install uv for fast Python package management
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:$PATH"
+# Install uv for fast Python package management (pip for musl/Alpine compatibility)
+RUN pip3 install --break-system-packages uv
 
 # Create app directory
 RUN mkdir -p /app /mem0 /data
@@ -105,69 +129,37 @@ COPY Sidecar /app/
 
 # Install Python dependencies with uv (frozen)
 WORKDIR /app
-RUN uv venv /app/.venv && \
-    . /app/.venv/bin/activate && \
+RUN uv venv --clear /app/.venv && \\
+    . /app/.venv/bin/activate && \\
     uv pip install -r requirements-vm.txt
 
-# Create init script
-RUN cat > /init <<'INIT_SCRIPT'
-#!/bin/sh
-# Bowser VM Init Script
+# Copy real init and start-backend scripts from repo
+COPY VM/alpine/init /init
+COPY VM/alpine/start-backend.sh /start-backend.sh
+COPY VM/alpine/unlock-storage.sh /unlock-storage.sh
+RUN chmod +x /init /start-backend.sh /unlock-storage.sh
 
-mount -t proc proc /proc
-mount -t sysfs sys /sys
-mount -t devtmpfs dev /dev
-mount -t tmpfs -o mode=0755 tmpfs /run
-mount -t tmpfs -o mode=1777 tmpfs /tmp
-
-# Setup networking (vsock only)
-ip link set lo up
-
-# Wait for vsock to receive LUKS key and unlock /mem0
-echo "Waiting for LUKS key via vsock..."
-# This will be handled by start-backend.sh
-
-# Start backend
-exec /start-backend.sh
-INIT_SCRIPT
-
-RUN chmod +x /init
-
-# Create backend startup script
-RUN cat > /start-backend.sh <<'START_SCRIPT'
-#!/bin/sh
-# Start Bowser FastAPI backend on vsock
-
-cd /app
-
-# Activate venv
-. .venv/bin/activate
-
-# Set environment
-export PYTHONUNBUFFERED=1
-export LOG_FORMAT=json
-
-# Start FastAPI with vsock listener
-echo "Starting FastAPI backend on vsock..."
-exec python3 -m app.main --vsock --port 8765
-START_SCRIPT
-
-RUN chmod +x /start-backend.sh
+# Generate initramfs with vsock module support (use the installed Alpine virt kernel)
+RUN KVER=\$(ls /lib/modules/ | head -1) && mkinitfs -o /boot/initramfs "\$KVER"
 
 # Clean up to reduce image size
-RUN rm -rf /var/cache/apk/* \
-    /tmp/* \
+RUN rm -rf /var/cache/apk/* \\
+    /tmp/* \\
     /root/.cache
 
 EOF
 
-    # Build Docker image
-    log "Building Alpine container..."
-    docker build -f Dockerfile.alpine-build -t bowser-alpine:latest "$PROJECT_ROOT"
+    # Build Docker image with correct platform
+    log "Building Alpine container (platform: $DOCKER_PLATFORM)..."
+    docker build \
+        --platform "$DOCKER_PLATFORM" \
+        -f Dockerfile.alpine-build \
+        -t "bowser-alpine:latest" \
+        "$PROJECT_ROOT"
     
     # Export filesystem
     log "Exporting filesystem..."
-    CONTAINER_ID=$(docker create bowser-alpine:latest)
+    CONTAINER_ID=$(docker create --platform "$DOCKER_PLATFORM" bowser-alpine:latest)
     docker export "$CONTAINER_ID" > alpine-rootfs.tar
     docker rm "$CONTAINER_ID"
     
@@ -175,6 +167,40 @@ EOF
     rm -f Dockerfile.alpine-build
     
     success "Alpine rootfs built"
+}
+
+# =============================================================================
+# Extract Kernel and Initramfs for VZLinuxBootLoader
+# =============================================================================
+
+extract_boot_files() {
+    log "Extracting kernel and initramfs for VZLinuxBootLoader..."
+
+    # Use docker cp to avoid macOS BSD tar wildcard/symlink issues
+    TMP_CONTAINER=$(docker create --platform "$DOCKER_PLATFORM" bowser-alpine:latest)
+    rm -rf ./boot-extract
+    docker cp "$TMP_CONTAINER:/boot/." ./boot-extract/
+    docker rm "$TMP_CONTAINER"
+
+    # Find the real kernel file (resolve symlinks, prefer non-symlink)
+    KERNEL_FILE=$(find ./boot-extract -name "vmlinuz*" ! -type l | head -1)
+    [ -n "$KERNEL_FILE" ] || KERNEL_FILE=$(find ./boot-extract -name "vmlinuz*" | head -1)
+    [ -n "$KERNEL_FILE" ] || error "Could not find kernel in Alpine image. Check that linux-virt is installed."
+    cp "$KERNEL_FILE" "$OUTPUT_KERNEL"
+
+    # Find initramfs (the one we generated with mkinitfs)
+    INITRAMFS_FILE=$(find ./boot-extract -name "initramfs" | head -1)
+    [ -n "$INITRAMFS_FILE" ] || INITRAMFS_FILE=$(find ./boot-extract -name "initramfs*" | head -1)
+    [ -n "$INITRAMFS_FILE" ] || error "Could not find initramfs in Alpine image."
+    cp "$INITRAMFS_FILE" "$OUTPUT_INITRAMFS"
+
+    rm -rf ./boot-extract
+
+    [[ -s "$OUTPUT_KERNEL" ]]    || error "Extracted kernel is empty. Build failed."
+    [[ -s "$OUTPUT_INITRAMFS" ]] || error "Extracted initramfs is empty. Build failed."
+
+    success "Kernel extracted:    $(du -h "$OUTPUT_KERNEL" | cut -f1)"
+    success "Initramfs extracted: $(du -h "$OUTPUT_INITRAMFS" | cut -f1)"
 }
 
 # =============================================================================
@@ -186,11 +212,14 @@ install_to_image() {
     
     # Create loop device (macOS doesn't have losetup, use hdiutil)
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        # On macOS, we'll use a different approach
+        # On macOS, use Docker to format and populate the image
         log "Formatting image with ext4..."
         
-        # Use Docker to format and copy
-        docker run --rm -v "$PWD:/work" -w /work alpine:3.19 sh -c "
+        docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            -v "$PWD:/work" \
+            -w /work \
+            "alpine:${ALPINE_VERSION}" sh -c "
             apk add --no-cache e2fsprogs
             mkfs.ext4 -L Bowser-System /work/$OUTPUT_IMAGE
         "
@@ -198,10 +227,11 @@ install_to_image() {
         # Mount using Docker and extract rootfs
         log "Extracting rootfs to image..."
         docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
             --privileged \
             -v "$PWD:/work" \
             -w /work \
-            alpine:3.19 sh -c "
+            "alpine:${ALPINE_VERSION}" sh -c "
             apk add --no-cache e2fsprogs
             mkdir -p /mnt/root
             mount -o loop /work/$OUTPUT_IMAGE /mnt/root
@@ -253,25 +283,30 @@ EOF
 
 main() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  🏔️  Bowser Alpine Linux VM Image Builder"
+    echo "  Bowser Alpine Linux VM Image Builder"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    log "Host arch: $(uname -m) -> Alpine arch: $ALPINE_ARCH (platform: $DOCKER_PLATFORM)"
     echo ""
     
     check_prerequisites
     create_vm_requirements
     create_base_image
     build_alpine_rootfs
+    extract_boot_files
     install_to_image
     
     echo ""
-    success "✅ VM image built successfully: $OUTPUT_IMAGE"
+    success "VM image built successfully: $OUTPUT_IMAGE"
     
-    # Show image size
-    SIZE=$(du -h "$OUTPUT_IMAGE" | cut -f1)
-    log "Image size: $SIZE"
+    # Show output sizes
+    log "Output files:"
+    log "  system.img:  $(du -h "$OUTPUT_IMAGE" | cut -f1)"
+    log "  vmlinuz:     $(du -h "$OUTPUT_KERNEL" | cut -f1)"
+    log "  initramfs:   $(du -h "$OUTPUT_INITRAMFS" | cut -f1)"
     log ""
     log "Next steps:"
-    log "  1. Upload $OUTPUT_IMAGE to CDN"
+    log "  1. Copy system.img, vmlinuz, initramfs to CDN or bundle path"
     log "  2. Update VMBootstrap.swift with correct version"
     log "  3. Test with: swift run Bowser"
 }

@@ -30,18 +30,18 @@ class BackendService: ObservableObject {
     // MARK: - Initialization
     
     private init() {
-        // Detect mode based on build configuration
+        // In DEBUG builds always use development mode (Python sidecar on localhost:8765).
+        // In release builds read the BowserBackendMode key written by the build script:
+        //   "production"  → VM mode  (build_full.sh)
+        //   "development" → TCP mode (build_app.sh)
+        //   missing key   → TCP mode (safe default)
         #if DEBUG
         self.mode = .development
         #else
-        // Check if running from .app bundle
-        if Bundle.main.bundlePath.hasSuffix(".app") {
-            self.mode = .production
-        } else {
-            self.mode = .development
-        }
+        let plistMode = Bundle.main.infoDictionary?["BowserBackendMode"] as? String
+        self.mode = (plistMode == "production") ? .production : .development
         #endif
-        
+
         print("[BackendService] Mode: \(mode)")
     }
     
@@ -156,8 +156,11 @@ class BackendService: ObservableObject {
             throw BackendError.vmInitFailed
         }
         
-        // Check if VM image needs download
+        // Install artifacts that were bundled by build_full.sh (if any)
         let bootstrap = VMBootstrap()
+        bootstrap.installBundledArtifactsIfNeeded()
+
+        // Check if VM image needs download
         if bootstrap.needsDownload() {
             print("[BackendService] VM image needs download...")
             // This would trigger a UI prompt in the app
@@ -167,10 +170,8 @@ class BackendService: ObservableObject {
         // Start VM
         try await vm.startVM()
         
-        // Create vsock client
-        // Note: In production, we'd get the actual CID from the VM
-        let cid: UInt32 = 3 // Guest CID (typically 3)
-        vsockClient = VSockClient(cid: cid)
+        // Create vsock client (routes through VMManager's VZVirtioSocketDevice)
+        vsockClient = VSockClient()
         
         // Verify connection
         if let client = vsockClient, await (try? client.healthCheck()) == true {

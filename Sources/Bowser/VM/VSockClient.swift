@@ -1,26 +1,22 @@
 // VSockClient.swift
-// HTTP client that communicates over vsock instead of TCP/IP
+// HTTP client that communicates over VZVirtioSocketConnection instead of TCP/IP
 
 import Foundation
-import Network
-import Virtualization
+@preconcurrency import Virtualization
 
-/// HTTP client for vsock communication with the VM backend
+/// HTTP client for vsock communication with the VM backend.
+/// Uses VZVirtioSocketConnection (via VMManager) for host-to-guest IPC.
 @available(macOS 14.0, *)
 final class VSockClient: @unchecked Sendable {
 
     // MARK: - Properties
 
     private let vsockPort: UInt32 = 8765
-    private let cid: UInt32  // Context ID of the VM
     private let timeout: TimeInterval = 30
-    private let lock = NSLock()
 
     // MARK: - Initialization
 
-    init(cid: UInt32) {
-        self.cid = cid
-    }
+    init() {}
 
     // MARK: - HTTP Requests
 
@@ -33,159 +29,81 @@ final class VSockClient: @unchecked Sendable {
     }
 
     func postJSON<T: Encodable>(_ path: String, body: T) async throws -> Data {
-        let encoder = JSONEncoder()
-        let jsonData = try encoder.encode(body)
+        let jsonData = try JSONEncoder().encode(body)
         return try await post(path, body: jsonData)
     }
 
     // MARK: - Core Request Handler
 
     private func request(method: String, path: String, body: Data?) async throws -> Data {
-        let endpoint = NWEndpoint.hostPort(
-            host: .init("\(cid)"),
-            port: NWEndpoint.Port(rawValue: UInt16(vsockPort))!
-        )
+        let connection = try await VMManager.shared.connectToPort(vsockPort)
 
-        // Use default parameters
-        let parameters = NWParameters(tls: nil)
-
-        // Attempt to set vsock transport
-        // In some environments, NWProtocolVSOCK may need to be accessed via the framework
-        parameters.defaultProtocolStack.transportProtocol = NWProtocolTCP.Options()  // FIXME: Restore NWProtocolVSOCK.Options() once SDK issue is found
-
-        let connection = NWConnection(to: endpoint, using: parameters)
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let state = RequestState()
-
-            let finish: @Sendable (Result<Data, Error>) -> Void = { result in
-                state.lock.lock()
-                if state.isFinished {
-                    state.lock.unlock()
-                    return
-                }
-                state.isFinished = true
-                state.lock.unlock()
-
-                connection.cancel()
-
-                switch result {
-                case .success(let data):
-                    continuation.resume(returning: data)
-                case .failure(let error):
-                    continuation.resume(throwing: error)
-                }
+        return try await withThrowingTaskGroup(of: Data.self) { group in
+            // Timeout task
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(self.timeout * 1_000_000_000))
+                throw VSockError.timeout
             }
 
-            connection.stateUpdateHandler = { newState in
-                switch newState {
-                case .ready:
-                    self.sendHTTPRequest(
-                        connection: connection,
-                        method: method,
-                        path: path,
-                        body: body,
-                        completion: finish
-                    )
-                case .failed(let error):
-                    finish(.failure(error))
-                case .waiting(let error):
-                    print("[VSockClient] Waiting: \(error)")
-                case .cancelled:
-                    finish(.failure(VSockError.timeout))
-                default:
-                    break
-                }
+            // Request task
+            group.addTask {
+                defer { connection.close() }
+                try self.sendHTTPRequest(
+                    connection: connection,
+                    method: method,
+                    path: path,
+                    body: body
+                )
+                return try self.readHTTPResponse(connection: connection)
             }
 
-            connection.start(queue: .global())
-
-            // Timeout handler
-            DispatchQueue.global().asyncAfter(deadline: .now() + self.timeout) {
-                finish(.failure(VSockError.timeout))
-            }
+            // Return whichever finishes first; cancel the other
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
         }
     }
 
     // MARK: - HTTP Protocol Implementation
 
     private func sendHTTPRequest(
-        connection: NWConnection,
+        connection: VZVirtioSocketConnection,
         method: String,
         path: String,
-        body: Data?,
-        completion: @escaping @Sendable (Result<Data, Error>) -> Void
-    ) {
-        var request = "\(method) \(path) HTTP/1.1\r\n"
-        request += "Host: localhost\r\n"
-        request += "Connection: close\r\n"
-
+        body: Data?
+    ) throws {
+        var headers = "\(method) \(path) HTTP/1.1\r\n"
+        headers += "Host: localhost\r\n"
+        headers += "Connection: close\r\n"
         if let body = body {
-            request += "Content-Type: application/json\r\n"
-            request += "Content-Length: \(body.count)\r\n"
+            headers += "Content-Type: application/json\r\n"
+            headers += "Content-Length: \(body.count)\r\n"
         }
-        request += "\r\n"
+        headers += "\r\n"
 
-        guard let headersData = request.data(using: .utf8) else {
-            completion(.failure(VSockError.invalidRequest))
-            return
+        guard let headerData = headers.data(using: .utf8) else {
+            throw VSockError.invalidRequest
         }
 
-        connection.send(
-            content: headersData,
-            completion: .contentProcessed { error in
-                if let error = error {
-                    completion(.failure(error))
-                    return
-                }
-
-                if let body = body {
-                    connection.send(
-                        content: body,
-                        completion: .contentProcessed { error in
-                            if let error = error {
-                                completion(.failure(error))
-                                return
-                            }
-                            self.readHTTPResponse(connection: connection, completion: completion)
-                        })
-                } else {
-                    self.readHTTPResponse(connection: connection, completion: completion)
-                }
-            })
+        let writeHandle = FileHandle(fileDescriptor: connection.fileDescriptor, closeOnDealloc: false)
+        writeHandle.write(headerData)
+        if let body = body {
+            writeHandle.write(body)
+        }
     }
 
-    private func readHTTPResponse(
-        connection: NWConnection,
-        completion: @escaping @Sendable (Result<Data, Error>) -> Void
-    ) {
-        let responseData = AtomicData()
+    private func readHTTPResponse(connection: VZVirtioSocketConnection) throws -> Data {
+        let readHandle = FileHandle(fileDescriptor: connection.fileDescriptor, closeOnDealloc: false)
+        var accumulated = Data()
 
-        @Sendable func receive() {
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) {
-                data, _, isComplete, error in
-                if let error = error {
-                    completion(.failure(error))
-                    return
-                }
-
-                if let data = data {
-                    responseData.append(data)
-                }
-
-                if isComplete {
-                    do {
-                        let body = try self.parseHTTPResponse(responseData.data)
-                        completion(.success(body))
-                    } catch {
-                        completion(.failure(error))
-                    }
-                } else {
-                    receive()
-                }
-            }
+        // Read in chunks until the connection is closed by the guest
+        while true {
+            let chunk = readHandle.availableData
+            if chunk.isEmpty { break }
+            accumulated.append(chunk)
         }
-        receive()
+
+        return try parseHTTPResponse(accumulated)
     }
 
     private func parseHTTPResponse(_ data: Data) throws -> Data {
@@ -240,8 +158,8 @@ final class VSockClient: @unchecked Sendable {
             let api_key: String
             let model: String?
         }
-        let request = ConfigRequest(provider: provider, api_key: apiKey, model: model)
-        _ = try await postJSON("/api/ai/configure", body: request)
+        let requestBody = ConfigRequest(provider: provider, api_key: apiKey, model: model)
+        _ = try await postJSON("/api/ai/configure", body: requestBody)
     }
 
     func executeTask(task: String, context: [String: String]?) async throws -> TaskResponse {
@@ -249,33 +167,14 @@ final class VSockClient: @unchecked Sendable {
             let task: String
             let context: [String: String]?
         }
-        let request = TaskRequest(task: task, context: context)
-        let data = try await postJSON("/api/ai/execute", body: request)
+        let requestBody = TaskRequest(task: task, context: context)
+        let data = try await postJSON("/api/ai/execute", body: requestBody)
         return try JSONDecoder().decode(TaskResponse.self, from: data)
     }
-}
 
-// MARK: - Helper Types
-
-private final class RequestState: @unchecked Sendable {
-    var isFinished = false
-    let lock = NSLock()
-}
-
-private final class AtomicData: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _data = Data()
-
-    var data: Data {
-        lock.lock()
-        defer { lock.unlock() }
-        return _data
-    }
-
-    func append(_ data: Data) {
-        lock.lock()
-        defer { lock.unlock() }
-        _data.append(data)
+    /// Generic POST for any endpoint — used by AIService in production mode
+    func performRequest(method: String, path: String, body: Data?) async throws -> Data {
+        try await request(method: method, path: path, body: body)
     }
 }
 

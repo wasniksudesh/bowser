@@ -67,7 +67,7 @@ log_step() { echo "${CYAN}[Bowser]${NC} ▶ $1"; }
 # =============================================================================
 
 show_help() {
-    echo "Bowser Development Script"
+    echo "Bowser Development Script  (Build Type 1: Fast Build)"
     echo ""
     echo "Usage: ./run_dev.sh [options]"
     echo ""
@@ -81,9 +81,32 @@ show_help() {
     echo "  1. Install required build tools (cmake, ninja) via Homebrew"
     echo "  2. Download CEF binaries if not present"
     echo "  3. Build the CEF wrapper library (libcef_dll_wrapper)"
-    echo "  4. Set up Python virtual environment (smart caching - only installs when needed)"
-    echo "  5. Start the AI sidecar (unless --skip-sidecar, auto-restarts if files change)"
-    echo "  6. Build and run the Swift application"
+    echo "  4. Set up Python virtual environment (smart caching)"
+    echo "  5. Start the AI sidecar on localhost:8765 (unless --skip-sidecar)"
+    echo "  6. Build the Swift app (debug) and launch it directly — no .app assembly"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Three Build Types"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  1. Fast build   ./run_dev.sh        (this script)"
+    echo "     Runs the project directly.  Python sidecar starts on"
+    echo "     localhost:8765.  No .app bundle assembled.  Hot-reload"
+    echo "     on Python file changes.  Best for day-to-day development."
+    echo ""
+    echo "  2. App build    ./build_app.sh"
+    echo "     Builds a standalone Bowser.app in release mode."
+    echo "     Backend mode: development (TCP -> localhost:8765)."
+    echo "     Start the sidecar separately before opening the app."
+    echo "     No VM required — suitable for distributing to testers"
+    echo "     who run the sidecar themselves."
+    echo ""
+    echo "  3. Full build   ./build_full.sh"
+    echo "     Builds the Alpine Linux VM image, then builds a fully"
+    echo "     self-contained Bowser.app.  The Python backend runs"
+    echo "     inside the VM (vsock IPC, no open TCP ports)."
+    echo "     Backend mode: production.  Requires Docker + qemu-img."
+    echo "     Use --skip-vm-build to reuse an existing VM image."
     echo ""
     echo "Performance Tips:"
     echo "  - Install 'uv' for 10-100x faster Python package installation:"
@@ -744,7 +767,9 @@ build_and_run_swift() {
     
     # Ad-hoc sign the app bundle to ensure permissions work
     log_info "Signing application bundle..."
-    codesign --force --deep --sign - "$PROJECT_DIR/Bowser.app"
+    codesign --force --deep --sign - \
+        --entitlements "$PROJECT_DIR/Bowser.entitlements" \
+        "$PROJECT_DIR/Bowser.app"
     
     log_success "App bundle updated and signed"
     

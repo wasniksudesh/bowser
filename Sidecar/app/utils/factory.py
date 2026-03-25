@@ -8,26 +8,27 @@ logger = logging.getLogger(__name__)
 
 def get_llm(provider: str, model: str, api_key: str, temperature: float = 0):
     """Factory function to get LLM instance."""
-    # Try to get API key from environment if not provided or if it's a placeholder
     actual_api_key = api_key
     if api_key.isupper() or not api_key:
          actual_api_key = os.getenv(api_key) or api_key
 
-    if provider == "gemini":
+    p = provider.lower()
+
+    if p == "gemini":
         return ChatGoogleGenerativeAI(
             model=model,
             google_api_key=actual_api_key,
             temperature=temperature
         )
 
-    if provider == "openai":
+    if p == "openai":
         return ChatOpenAI(
             model=model,
             api_key=actual_api_key,
             temperature=temperature
         )
 
-    if provider in ["claude", "anthropic"]:
+    if p in ["claude", "anthropic"]:
         return ChatAnthropic(
             model=model,
             anthropic_api_key=actual_api_key,
@@ -43,13 +44,15 @@ def get_embedder(provider: str, model: str, api_key: str):
     if api_key.isupper() or not api_key:
          actual_api_key = os.getenv(api_key) or api_key
 
-    if provider == "gemini":
+    p = provider.lower()
+
+    if p == "gemini":
         return GoogleGenerativeAIEmbeddings(
             model=model,
             google_api_key=actual_api_key
         )
 
-    if provider == "openai":
+    if p == "openai":
         return OpenAIEmbeddings(
             model=model,
             api_key=actual_api_key

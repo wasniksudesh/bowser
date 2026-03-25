@@ -1,0 +1,64 @@
+# Bowser AI Sidecar - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core Framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.24.0
+python-dotenv
+pydantic>=2.10.0
+pydantic-settings
+
+# AI & LLM - Grouped for compatibility
+# Upgraded to LangChain 1.x for better stability and Gemini compatibility
+langchain>=0.3.0
+langgraph>=0.2.0
+langchain-community>=0.3.0
+langchain-openai>=0.2.0
+langchain-anthropic>=0.3.0
+langchain-google-genai>=4.0.0
+openai>=1.0.0
+mcp>=0.1.0
+
+# Memory Management
+mem0ai>=0.1.30
+
+# Database & Storage
+sqlalchemy>=2.0.0
+alembic
+redis
+
+# HTTP Client (Standardized on httpx)
+httpx>=0.27.0
+
+# Utilities
+python-multipart
+tenacity
+jsonschema>=4.0.0
+
+# Build Tools
+pyinstaller
+
+# Browser Automation
+beautifulsoup4
+lxml
+
+# Logging & Monitoring
+loguru
+prometheus-client
+
+# Content Redaction
+opencv-python>=4.8.0
+presidio-analyzer>=2.2.0
+presidio-anonymizer>=2.2.0
+
+# Optional: Local AI with Ollama
+# ollama>=0.1.0
+
+# Plugin SDKs
+PyGithub
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-api-python-client>=2.0.0
+
+# VM-specific dependencies
+hypercorn>=0.16.0

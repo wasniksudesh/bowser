@@ -142,7 +142,7 @@ final class PlanStorageManager {
     /// - Parameter sourceId: Source plan UUID
     /// - Returns: New plan document or nil if source not found
     func forkPlan(sourceId: UUID) -> PlanDocument? {
-        guard var sourceDocument = loadPlan(id: sourceId) else {
+        guard let sourceDocument = loadPlan(id: sourceId) else {
             print("[PlanStorage] Cannot fork - source plan not found: \(sourceId)")
             return nil
         }
@@ -160,7 +160,7 @@ final class PlanStorageManager {
         )
         
         // Create new document with same state but new metadata
-        var newDocument = PlanDocument(
+        let newDocument = PlanDocument(
             metadata: newMetadata,
             savedState: sourceDocument.savedState,
             clarificationQuestions: sourceDocument.clarificationQuestions,

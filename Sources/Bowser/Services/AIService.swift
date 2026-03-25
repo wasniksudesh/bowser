@@ -1,5 +1,6 @@
 // AIService.swift - Python Sidecar Client
-// URLSession-based client for FastAPI AI endpoints
+// In development mode: URLSession over TCP to localhost:8765
+// In production mode: HTTP-over-vsock through VSockClient / VMManager
 
 import Foundation
 
@@ -7,111 +8,88 @@ import Foundation
 // MARK: - AI Service
 // =============================================================================
 
-/// Client for communicating with the Python AI sidecar
-/// Uses async/await and URLSession for HTTP requests
-/// IPC FLOW: Swift AIService -> HTTP Request -> Python FastAPI -> JSON Response -> Swift
+/// Client for communicating with the Python AI sidecar.
+///
+/// Mode switching:
+/// - `.development` (DEBUG or non-.app bundle): URLSession to localhost:8765
+/// - `.production` (.app bundle, non-DEBUG): VSockClient through VMManager
 @MainActor
 final class AIService: Sendable {
 
     /// Shared singleton instance
     static let shared = AIService()
 
-    /// Base URL for the Python sidecar
-    private let baseURL: URL
+    /// Base URL used in development mode only
+    private let devBaseURL = URL(string: "http://localhost:8765")!
 
-    /// URL session for requests
+    /// URL session for dev-mode requests
     private let session: URLSession
 
     // MARK: - Initialization
 
     private init() {
-        self.baseURL = URL(string: "http://localhost:8765")!
-
-        // Configure session with reasonable timeouts
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
         self.session = URLSession(configuration: config)
     }
 
+    // MARK: - Transport
+
+    /// True when running in production (VM) mode
+    private var isProduction: Bool {
+        BackendService.shared.mode == .production
+    }
+
+    /// Perform a raw HTTP request. Routes to vsock in production, URLSession in dev.
+    private func performRequest(method: String, path: String, body: Data?) async throws -> Data {
+        if isProduction {
+            let client = VSockClient()
+            return try await client.performRequest(method: method, path: path, body: body)
+        }
+
+        let url = devBaseURL.appendingPathComponent(path.hasPrefix("/") ? String(path.dropFirst()) : path)
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        if let body = body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AIServiceError.invalidResponse
+        }
+        guard http.statusCode < 400 else {
+            throw AIServiceError.httpError(statusCode: http.statusCode)
+        }
+        return data
+    }
+
     // MARK: - API Methods
 
     /// Check if the sidecar is healthy
-    /// - Returns: True if sidecar responds with 200 OK
     func isHealthy() async -> Bool {
-        let url = baseURL.appendingPathComponent("health")
-
         do {
-            let (_, response) = try await session.data(from: url)
-            return (response as? HTTPURLResponse)?.statusCode == 200
+            _ = try await performRequest(method: "GET", path: "/health", body: nil)
+            return true
         } catch {
             return false
         }
     }
 
     /// Analyze content using the AI backend
-    /// - Parameter content: Content to analyze (URL, text, etc.)
-    /// - Returns: Analysis result string
-    /// - Throws: AIServiceError on failure
     func analyze(content: String) async throws -> String {
-        let url = baseURL.appendingPathComponent("analyze")
-
-        // Build request
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        // Encode body
-        let body = AnalyzeRequest(content: content)
-        request.httpBody = try JSONEncoder().encode(body)
-
-        // Make request
-        let (data, response) = try await session.data(for: request)
-
-        // Check response
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AIServiceError.invalidResponse
-        }
-
-        guard httpResponse.statusCode == 200 else {
-            throw AIServiceError.httpError(statusCode: httpResponse.statusCode)
-        }
-
-        // Decode response
+        let body = try JSONEncoder().encode(AnalyzeRequest(content: content))
+        let data = try await performRequest(method: "POST", path: "/analyze", body: body)
         let result = try JSONDecoder().decode(AnalyzeResponse.self, from: data)
         return result.result
     }
 
-    /// Configure the AI agent with a new API key
-    /// - Parameters:
-    ///   - provider: AI provider (e.g., "openai", "anthropic")
-    ///   - apiKey: API key for the provider
-    /// - Throws: AIServiceError on failure
+    /// Configure the AI agent with a new provider and API key
     func configureAI(provider: String, apiKey: String) async throws {
-        let url = baseURL.appendingPathComponent("api/ai/configure")
-
-        // Build request
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        // Encode body
-        let body = AIConfigureRequest(provider: provider, api_key: apiKey)
-        request.httpBody = try JSONEncoder().encode(body)
-
-        // Make request
-        let (data, response) = try await session.data(for: request)
-
-        // Check response
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AIServiceError.invalidResponse
-        }
-
-        guard httpResponse.statusCode == 200 else {
-            throw AIServiceError.httpError(statusCode: httpResponse.statusCode)
-        }
-
-        // Decode response to verify success
+        let body = try JSONEncoder().encode(AIConfigureRequest(provider: provider, api_key: apiKey))
+        let data = try await performRequest(method: "POST", path: "/api/ai/configure", body: body)
         let result = try JSONDecoder().decode(AIConfigureResponse.self, from: data)
         if !result.success {
             throw AIServiceError.configurationFailed(message: result.message)
@@ -119,34 +97,9 @@ final class AIService: Sendable {
     }
 
     /// Resolve a natural language query to a direct URL using AI
-    /// - Parameter query: Natural language query (e.g., "generate gpg keys on github")
-    /// - Returns: Resolved URL string
-    /// - Throws: AIServiceError on failure
     func resolveURL(query: String, model: String? = nil) async throws -> String {
-        let url = baseURL.appendingPathComponent("api/ai/resolve-url")
-
-        // Build request
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        // Encode body
-        let body = ResolveURLRequest(query: query, model: model)
-        request.httpBody = try JSONEncoder().encode(body)
-
-        // Make request
-        let (data, response) = try await session.data(for: request)
-
-        // Check response
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AIServiceError.invalidResponse
-        }
-
-        guard httpResponse.statusCode == 200 else {
-            throw AIServiceError.httpError(statusCode: httpResponse.statusCode)
-        }
-
-        // Decode response
+        let body = try JSONEncoder().encode(ResolveURLRequest(query: query, model: model))
+        let data = try await performRequest(method: "POST", path: "/api/ai/resolve-url", body: body)
         let result = try JSONDecoder().decode(ResolveURLResponse.self, from: data)
         return result.url
     }
@@ -156,18 +109,15 @@ final class AIService: Sendable {
 // MARK: - Request/Response Models
 // =============================================================================
 
-/// Request body for /analyze endpoint
 struct AnalyzeRequest: Codable, Sendable {
     let content: String
 }
 
-/// Response body from /analyze endpoint
 struct AnalyzeResponse: Codable, Sendable {
     let result: String
     let timestamp: String?
 }
 
-/// Request body for /configure endpoint
 struct AIConfigureRequest: Codable, Sendable {
     let provider: String
     let api_key: String
@@ -180,19 +130,16 @@ struct AIConfigureRequest: Codable, Sendable {
     }
 }
 
-/// Response body from /configure endpoint
 struct AIConfigureResponse: Codable, Sendable {
     let success: Bool
     let message: String
 }
 
-/// Request body for /resolve-url endpoint
 struct ResolveURLRequest: Codable, Sendable {
     let query: String
     let model: String?
 }
 
-/// Response body from /resolve-url endpoint
 struct ResolveURLResponse: Codable, Sendable {
     let url: String
     let steps: [String]
@@ -202,7 +149,6 @@ struct ResolveURLResponse: Codable, Sendable {
 // MARK: - Errors
 // =============================================================================
 
-/// Errors from AI service communication
 enum AIServiceError: Error, LocalizedError {
     case invalidResponse
     case httpError(statusCode: Int)

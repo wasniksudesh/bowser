@@ -94,7 +94,7 @@ final class PlanState {
     )
 
     // Load existing document to preserve metadata
-    guard var document = storageManager.loadPlan(id: planId) else {
+    guard let document = storageManager.loadPlan(id: planId) else {
       print("[PlanState] Cannot save - plan document not found")
       return
     }

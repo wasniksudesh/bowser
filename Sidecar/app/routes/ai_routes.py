@@ -126,19 +126,15 @@ async def configure_ai_agent(request: AIConfigureRequest):
     Reconfigure the AI agent with a new provider and API key.
     """
     try:
-        from app.main import ai_agent
-        
-        if not ai_agent:
-            raise HTTPException(status_code=503, detail="AI service not initialized")
-        
-        await ai_agent.reconfigure(
+        from app.services.ai_agent import reconfigure_ai_agent
+        await reconfigure_ai_agent(
             provider=request.provider,
             api_key=request.api_key,
             model=request.model
         )
-        
         return {"success": True, "message": f"Successfully reconfigured to {request.provider}"}
-        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"AI reconfiguration failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

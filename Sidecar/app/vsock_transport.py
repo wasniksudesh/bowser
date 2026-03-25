@@ -15,8 +15,9 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # vsock constants
-VMADDR_CID_HOST = 2  # Host (macOS) CID
-VMADDR_PORT_ANY = -1  # Let kernel assign port
+VMADDR_CID_HOST = 2        # Host (macOS) CID — used only as a reference, not for bind
+VMADDR_CID_ANY = 0xFFFFFFFF  # Bind to any CID so the guest listens on its own CID
+VMADDR_PORT_ANY = -1       # Let kernel assign port
 
 # Import vsock support if available
 try:
@@ -45,12 +46,43 @@ class VSockServer:
         self.port = port
         self.server = None
         
+    async def _trigger_lifespan(self):
+        """Run the ASGI lifespan startup so FastAPI initializes services."""
+        startup_complete = asyncio.Event()
+        startup_failed = False
+        # This event is set when the server is shutting down, which tells the
+        # lifespan handler to proceed past yield and run shutdown cleanup.
+        self._shutdown_event = asyncio.Event()
+
+        async def receive():
+            # First call: trigger startup
+            if not startup_complete.is_set():
+                return {"type": "lifespan.startup"}
+            # Subsequent calls: block until shutdown is requested
+            await self._shutdown_event.wait()
+            return {"type": "lifespan.shutdown"}
+
+        async def send(message):
+            nonlocal startup_failed
+            if message["type"] == "lifespan.startup.complete":
+                startup_complete.set()
+            elif message["type"] == "lifespan.startup.failed":
+                startup_failed = True
+                startup_complete.set()
+            elif message["type"] == "lifespan.shutdown.complete":
+                pass
+
+        scope = {"type": "lifespan", "asgi": {"version": "3.0"}}
+        self._lifespan_task = asyncio.create_task(self.app(scope, receive, send))
+        await startup_complete.wait()
+        if startup_failed:
+            raise RuntimeError("ASGI lifespan startup failed")
+
     async def serve(self):
         """Start the vsock server"""
         if not HAS_VSOCK:
             logger.error("Cannot start vsock server: AF_VSOCK not available")
             logger.info("Falling back to TCP server on localhost")
-            # Fall back to standard hypercorn
             from hypercorn.asyncio import serve
             from hypercorn.config import Config
             
@@ -58,21 +90,20 @@ class VSockServer:
             config.bind = [f"127.0.0.1:{self.port}"]
             await serve(self.app, config)
             return
+
+        # Trigger ASGI lifespan so FastAPI runs its startup (initializes AI agent, etc.)
+        await self._trigger_lifespan()
         
         logger.info(f"Starting vsock server on port {self.port}")
         
-        # Create vsock socket
         sock = socket.socket(AF_VSOCK, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
-        # Bind to port
-        sock.bind((VMADDR_CID_HOST, self.port))
+        sock.bind((VMADDR_CID_ANY, self.port))
         sock.listen(5)
         sock.setblocking(False)
         
         logger.info(f"vsock server listening on port {self.port}")
         
-        # Accept connections
         loop = asyncio.get_event_loop()
         
         while True:
@@ -80,7 +111,6 @@ class VSockServer:
                 client_sock, addr = await loop.sock_accept(sock)
                 logger.info(f"Accepted vsock connection from CID {addr}")
                 
-                # Handle connection in background
                 asyncio.create_task(self.handle_connection(client_sock))
                 
             except Exception as e:
@@ -123,8 +153,14 @@ class VSockServer:
                 sock.close()
                 return
             
-            method, path, _ = parts
-            
+            method, raw_path, _ = parts
+
+            # Split path and query string so FastAPI/Starlette can read query params correctly
+            from urllib.parse import urlparse
+            parsed_path = urlparse(raw_path)
+            path = parsed_path.path
+            query_string = parsed_path.query.encode('utf-8')
+
             # Parse headers
             headers = {}
             for line in lines[1:]:
@@ -158,7 +194,7 @@ class VSockServer:
                 'method': method,
                 'scheme': 'http',
                 'path': path,
-                'query_string': b'',
+                'query_string': query_string,
                 'root_path': '',
                 'headers': [(k.encode(), v.encode()) for k, v in headers.items()],
                 'server': ('vsock', self.port),

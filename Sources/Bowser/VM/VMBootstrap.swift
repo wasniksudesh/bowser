@@ -39,9 +39,53 @@ class VMBootstrap {
         try? FileManager.default.createDirectory(at: vmDirectory, withIntermediateDirectories: true)
     }
 
+    // MARK: - Bundle-bundled VM artifacts (build_full.sh)
+
+    /// When the full build bundles VM artifacts directly into Resources/VM/, copy them to
+    /// Application Support on first launch so VMManager can find them at its expected paths.
+    func installBundledArtifactsIfNeeded() {
+        let bundleVMDir = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Resources/VM", isDirectory: true)
+
+        let bundledSystem    = bundleVMDir.appendingPathComponent("system.img")
+        let bundledKernel    = bundleVMDir.appendingPathComponent("vmlinuz")
+        let bundledInitramfs = bundleVMDir.appendingPathComponent("initramfs")
+
+        guard FileManager.default.fileExists(atPath: bundledSystem.path) else {
+            // Not a full build — nothing to install
+            return
+        }
+
+        let destSystem    = vmDirectory.appendingPathComponent("system.img")
+        let destKernel    = vmDirectory.appendingPathComponent("vmlinuz")
+        let destInitramfs = vmDirectory.appendingPathComponent("initramfs")
+
+        let files: [(URL, URL)] = [
+            (bundledSystem, destSystem),
+            (bundledKernel, destKernel),
+            (bundledInitramfs, destInitramfs),
+        ]
+
+        for (src, dst) in files {
+            guard !FileManager.default.fileExists(atPath: dst.path) else { continue }
+            do {
+                try FileManager.default.copyItem(at: src, to: dst)
+                print("[VMBootstrap] Installed bundled artifact: \(dst.lastPathComponent)")
+            } catch {
+                print("[VMBootstrap] Failed to install \(src.lastPathComponent): \(error)")
+            }
+        }
+
+        // Mark version so needsDownload() returns false
+        if !FileManager.default.fileExists(atPath: versionFilePath.path) {
+            try? vmVersion.write(to: versionFilePath, atomically: true, encoding: .utf8)
+        }
+    }
+
     // MARK: - Image Management
 
-    /// Check if VM image needs to be downloaded or updated
+    /// Check if VM image needs to be downloaded or updated.
+    /// Returns false when artifacts are already present (bundled or previously downloaded).
     func needsDownload() -> Bool {
         // Check if system.img exists
         guard FileManager.default.fileExists(atPath: systemImagePath.path) else {

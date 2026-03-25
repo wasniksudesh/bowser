@@ -77,7 +77,8 @@ class MacNotesTool(BaseBrowserTool):
         """
         # AppleScript to create a new note
         # We wrap content in simple HTML because Notes body is HTML
-        html_content = f"<h1>{self._escape_applescript(title)}</h1><p>{self._escape_applescript(content).replace(r'\\n', '<br>')}</p>"
+        escaped_content = self._escape_applescript(content).replace(r'\\n', '<br>')
+        html_content = f"<h1>{self._escape_applescript(title)}</h1><p>{escaped_content}</p>"
         
         applescript = f'''
         tell application "Notes"

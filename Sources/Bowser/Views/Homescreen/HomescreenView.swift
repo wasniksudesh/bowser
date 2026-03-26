@@ -1,52 +1,55 @@
-// HomescreenView.swift - macOS-desktop-style homescreen with folder grid
-// Full-screen canvas: folders in auto-layout grid + bottom dock bar
+// HomescreenView.swift
+// Two-column homescreen: narrow folder column + scrollable widget grid.
+// Widgets are laid out in a grid (no free-form positioning) and support drag-to-reorder.
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 // =============================================================================
 // MARK: - Homescreen View
 // =============================================================================
 
-/// The app's homescreen — a full-window desktop canvas showing project folders
-/// in an auto-layout grid with a bottom dock bar, consistent with ArcTheme.
 struct HomescreenView: View {
 
     @Bindable var appNav: AppNavigationState
     @Bindable var browserState: BrowserState
 
-    @State private var showingNewFolderSheet = false
     @State private var newFolderName = ""
     @State private var newFolderAlertPresented = false
     @State private var showingHistorySidebar = true
     @State private var historySearchText = ""
     @State private var searchState = HomescreenSearchState()
 
+    // Drag-to-reorder state
+    @State private var draggingWidgetId: UUID? = nil
+    @State private var dropTargetIndex: Int? = nil
+
     private var folderManager: FolderManager { browserState.folderManager }
+    private var widgetManager: WidgetManager { browserState.widgetManager }
 
     var body: some View {
         ZStack(alignment: .bottom) {
             UnifiedBackdropView()
                 .ignoresSafeArea()
-            
-            // Widget layer (behind dock, above folders)
-            HomescreenWidgetLayer(
-                browserState: browserState,
-                widgetManager: browserState.widgetManager
-            )
-            .allowsHitTesting(true)
 
             HStack(spacing: 0) {
-                // Left sidebar: global history
+                // Left sidebar: global history (optional)
                 if showingHistorySidebar {
                     historySidebar
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
 
-                // Main content: folder grid
-                folderGridCanvas
+                // Narrow folder column
+                folderColumn
+                    .frame(minWidth: 160, idealWidth: 200, maxWidth: 240)
+
+                // Widget grid: takes remaining space
+                if !widgetManager.orderedVisibleWidgets.isEmpty {
+                    widgetGridArea
+                }
             }
 
-            // Dismiss scrim when search results are showing
+            // Dim scrim when search results are showing
             if searchState.showResults {
                 Color.black.opacity(0.15)
                     .ignoresSafeArea()
@@ -58,14 +61,11 @@ struct HomescreenView: View {
                     .transition(.opacity)
             }
 
-            // Bottom dock bar + attached search card
+            // Search results card + bottom dock bar
             VStack(spacing: 6) {
                 if searchState.showResults {
-                    HomescreenSearchResultsView(
-                        searchState: searchState,
-                        browserState: browserState
-                    )
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    HomescreenSearchResultsView(searchState: searchState, browserState: browserState)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
 
                 HomescreenBottomBar(
@@ -90,13 +90,14 @@ struct HomescreenView: View {
         } message: {
             Text("Enter a name for the new folder")
         }
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showingHistorySidebar)
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: widgetManager.orderedVisibleWidgets.count)
     }
 
     // MARK: - History Sidebar
 
     private var historySidebar: some View {
         VStack(spacing: 0) {
-            // Search bar inside sidebar
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11))
@@ -105,9 +106,7 @@ struct HomescreenView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                 if !historySearchText.isEmpty {
-                    Button {
-                        historySearchText = ""
-                    } label: {
+                    Button { historySearchText = "" } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(.tertiary)
@@ -117,74 +116,111 @@ struct HomescreenView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.primary.opacity(0.06))
-            )
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
             .padding(.horizontal, 10)
             .padding(.top, 10)
             .padding(.bottom, 6)
 
-            GlobalHistoryView(
-                browserState: browserState,
-                appNav: appNav,
-                searchText: $historySearchText
-            )
+            GlobalHistoryView(browserState: browserState, appNav: appNav, searchText: $historySearchText)
         }
         .frame(width: 260)
         .background(.ultraThinMaterial)
     }
 
-    // MARK: - Folder Grid Canvas
+    // MARK: - Folder Column
+    // Two fixed columns (~80pt each) fits the 72pt folder icons with spacing.
 
-    private var folderGridCanvas: some View {
+    private var folderColumn: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 80, maximum: 100), spacing: 16)],
-                alignment: .leading,
-                spacing: 18
+                columns: [
+                    GridItem(.fixed(80), spacing: 12),
+                    GridItem(.fixed(80), spacing: 12)
+                ],
+                alignment: .center,
+                spacing: 16
             ) {
-                // Existing folders
                 ForEach(folderManager.sortedFolders) { folder in
                     FolderIconView(
                         folder: folder,
-                        onOpen: {
-                            openFolder(folder)
-                        },
-                        onRename: { newName in
-                            folderManager.rename(folder, to: newName)
-                        },
-                        onSetColor: { color in
-                            folderManager.setColor(folder, to: color)
-                        },
+                        onOpen: { openFolder(folder) },
+                        onRename: { folderManager.rename(folder, to: $0) },
+                        onSetColor: { folderManager.setColor(folder, to: $0) },
                         onDelete: {
                             folderManager.delete(folder)
                             FolderTabPersistence.shared.deleteFolder(folder.id)
                             FolderHistoryPersistence.shared.deleteFolder(folder.id)
                         },
-                        onDuplicate: {
-                            folderManager.copyFolder(folder)
-                        },
-                        hasUnread: browserState.widgetManager.hasUnread(forFolder: folder.id)
+                        onDuplicate: { folderManager.copyFolder(folder) },
+                        hasUnread: widgetManager.hasUnread(forFolder: folder.id)
                     )
                 }
+                NewFolderButton { presentNewFolderPrompt() }
+            }
+            .padding(.top, 60)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 110)
+        }
+    }
 
-                // New folder button at end of grid
-                NewFolderButton {
-                    presentNewFolderPrompt()
+    // MARK: - Widget Grid Area
+    // Adaptive columns based on available width. Widgets keep their natural size.
+    // Supports drag-to-reorder.
+
+    private var widgetGridArea: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 260, maximum: 420), spacing: 16)],
+                alignment: .leading,
+                spacing: 16
+            ) {
+                ForEach(Array(widgetManager.orderedVisibleWidgets.enumerated()), id: \.element.id) { index, widget in
+                    HomescreenWidgetView(
+                        browserState: browserState,
+                        widget: widget,
+                        componentData: widgetManager.cachedData[widget.widgetId],
+                        onClose: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                widgetManager.removeWidget(widget.id)
+                            }
+                        }
+                    )
+                    .opacity(draggingWidgetId == widget.id ? 0.4 : 1.0)
+                    .overlay(alignment: .leading) {
+                        // Drop insertion indicator
+                        if dropTargetIndex == index && draggingWidgetId != widget.id {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.accentColor)
+                                .frame(width: 3)
+                                .padding(.vertical, 8)
+                                .offset(x: -10)
+                                .transition(.opacity)
+                        }
+                    }
+                    .onDrag {
+                        draggingWidgetId = widget.id
+                        return NSItemProvider(object: widget.id.uuidString as NSString)
+                    }
+                    .onDrop(of: [UTType.plainText], delegate: WidgetDropDelegate(
+                        targetIndex: index,
+                        draggingWidgetId: $draggingWidgetId,
+                        dropTargetIndex: $dropTargetIndex,
+                        onDrop: { fromId in
+                            widgetManager.moveWidget(fromId: fromId, toIndex: index)
+                        }
+                    ))
                 }
             }
-            .padding(.top, 60)  // clearance for traffic lights
-            .padding(.horizontal, 40)
-            .padding(.bottom, 100) // clearance for bottom bar
+            .padding(.top, 60)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 110)
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: widgetManager.orderedVisibleWidgets.map(\.id))
         }
     }
 
     // MARK: - Actions
 
     private func openFolder(_ folder: Folder) {
-        // Switch screen first so the transition animation can begin immediately,
-        // then load folder data after a brief yield to avoid blocking the first frame.
         appNav.openFolder(folder.id)
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(50))
@@ -202,8 +238,48 @@ struct HomescreenView: View {
         let folderName = name.isEmpty ? "New Folder" : name
         let folder = folderManager.createFolder(name: folderName)
         newFolderName = ""
-        // Immediately open the new folder
         openFolder(folder)
+    }
+}
+
+// =============================================================================
+// MARK: - Widget Drop Delegate
+// =============================================================================
+
+/// Handles drop events for widget drag-to-reorder in the grid.
+private struct WidgetDropDelegate: DropDelegate {
+
+    let targetIndex: Int
+    @Binding var draggingWidgetId: UUID?
+    @Binding var dropTargetIndex: Int?
+    let onDrop: (UUID) -> Void
+
+    func dropEntered(info: DropInfo) {
+        dropTargetIndex = targetIndex
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropTargetIndex == targetIndex {
+            dropTargetIndex = nil
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dropTargetIndex = nil
+        guard let draggingId = draggingWidgetId else { return false }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            onDrop(draggingId)
+        }
+        draggingWidgetId = nil
+        return true
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.plainText])
     }
 }
 
@@ -214,11 +290,8 @@ struct HomescreenView: View {
 #if DEBUG
 struct HomescreenView_Previews: PreviewProvider {
     static var previews: some View {
-        HomescreenView(
-            appNav: AppNavigationState(),
-            browserState: BrowserState()
-        )
-        .frame(width: 1280, height: 800)
+        HomescreenView(appNav: AppNavigationState(), browserState: BrowserState())
+            .frame(width: 1280, height: 800)
     }
 }
 #endif

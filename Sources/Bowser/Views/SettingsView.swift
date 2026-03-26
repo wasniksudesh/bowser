@@ -14,6 +14,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case privacy = "Privacy & Security"
     case extensions = "Extensions"
     case ai = "AI Features"
+    case widgets = "Widgets"
     case dock = "Floating Dock"
     case shortcuts = "Keyboard Shortcuts"
 
@@ -26,6 +27,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .privacy: return "lock.shield"
         case .extensions: return "puzzlepiece.extension"
         case .ai: return "sparkles"
+        case .widgets: return "square.grid.2x2"
         case .dock: return "dock.rectangle"
         case .shortcuts: return "command"
         }
@@ -88,6 +90,8 @@ struct SettingsDetailView: View {
                 ExtensionsSettingsView(manager: browserState.extensionManager)
             case .ai:
                 AISettingsView(manager: browserState.settingsManager)
+            case .widgets:
+                WidgetsSettingsView(widgetManager: browserState.widgetManager)
             case .dock:
                 DockSettingsView(dockState: browserState.floatingDockState)
             case .shortcuts:

@@ -393,6 +393,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         closeTabItem.target = self
         fileMenu.addItem(closeTabItem)
 
+        fileMenu.addItem(NSMenuItem.separator())
+
+        // Copy Page Link (CMD+SHIFT+C) — copies current page as rich hyperlink
+        let copyLinkItem = NSMenuItem(
+            title: "Copy Page Link",
+            action: #selector(handleCopyLink),
+            keyEquivalent: "c"
+        )
+        copyLinkItem.keyEquivalentModifierMask = [.command, .shift]
+        copyLinkItem.target = self
+        fileMenu.addItem(copyLinkItem)
+
         // Add File menu to main menu if not already present
         if !mainMenu.items.contains(where: { $0.title == "File" }) {
             // Insert after App menu (index 1) or at start
@@ -620,6 +632,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func handleCopy() {
         guard let activeTab = browserState.activeTab else { return }
         BrowserManager.shared.copy(pageId: activeTab.id)
+    }
+
+    /// Handle CMD+SHIFT+C - Copy Page Link as rich hyperlink
+    /// Writes the current page URL + title to the clipboard in three formats
+    /// (plain URL, HTML anchor, RTF with .link attribute) so destination apps
+    /// like Slack, Mail, and Notes receive a clean clickable hyperlink.
+    @objc private func handleCopyLink() {
+        guard let activeTab = browserState.activeTab else { return }
+        NSPasteboard.general.setRichLink(title: activeTab.title, url: activeTab.url)
     }
 
     /// Handle CMD+V - Paste

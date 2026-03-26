@@ -112,11 +112,9 @@ final class AgentState {
                 }
             }
 
-            // Status: always awaitingApproval after plan creation
-            // Auth will be collected per-goal when needed
-            session.status = .awaitingApproval
-
+            // Auto-approve and go straight to workflow view
             isLoading = false
+            await approveGoalPlan(approved: true)
         } catch {
             errorMessage = "Error: \(error.localizedDescription)"
             isLoading = false
@@ -317,10 +315,6 @@ final class AgentState {
                 session.currentGoalIndex = goalIndex
                 if goalIndex < session.goals.count {
                     session.goals[goalIndex].status = .planningSteps
-                    // Expand current goal, collapse all others
-                    for i in 0..<session.goals.count {
-                        session.goals[i].isExpanded = (i == goalIndex)
-                    }
                 }
             }
             
@@ -423,18 +417,13 @@ final class AgentState {
             }
             
         case "goal_evaluated":
-            // Goal evaluation result
-            if let evaluation = data["evaluation"] as? [String: Any] {
-                session.lastEvaluation = evaluation
-            }
+            break
             
         case "goal_completed":
             // Goal completed successfully
             if let goalIndex = data["goal_index"] as? Int,
                goalIndex < session.goals.count {
                 session.goals[goalIndex].status = .completed
-                // Collapse this goal - next goal will be expanded when goal_started fires
-                session.goals[goalIndex].isExpanded = false
             }
             
         case "goal_failed":
@@ -444,10 +433,7 @@ final class AgentState {
             }
             
         case "final_evaluated":
-            // Final query evaluation
-            if let evaluation = data["evaluation"] as? [String: Any] {
-                session.lastEvaluation = evaluation
-            }
+            break
             
         case "plan_extended":
             // More goals added to the plan
@@ -470,10 +456,6 @@ final class AgentState {
             
         case "complete":
             session.status = .completed
-            session.currentThought = nil
-            if let result = data["result"] as? [String: Any] {
-                session.lastEvaluation = result
-            }
             if let consolidated = data["consolidated_output"] as? [String: Any],
                let componentType = consolidated["component_type"] as? String {
                 session.consolidatedOutput = ConsolidatedOutput(
@@ -489,7 +471,6 @@ final class AgentState {
                 errorMessage = error
             }
             session.status = .failed
-            session.currentThought = nil
             isLoading = false
             
         default:
@@ -1056,28 +1037,49 @@ final class AgentSession: Identifiable {
     let query: String
     var contextArtifact: ContextArtifact?
     var executionPlan: ExecutionPlan?
-    var stepOutputs: [String: OutputArtifact] = [:]
     var status: SessionStatus
     let timestamp: Date
     
-    // ReAct loop state
-    var currentThought: ThoughtData?  // Current action awaiting approval
-    var trajectory: [TrajectoryEntry] = []  // Execution history
-    var lastEvaluation: [String: Any]?  // Latest goal evaluation
-    
     // Goal-by-goal execution state
-    var currentGoalIndex: Int = 0  // Which goal is currently active
-    var goals: [GoalInfo] = []  // List of goals with their states
-    var expandedGoalId: String?  // Which goal is currently expanded in UI
+    var currentGoalIndex: Int = 0
+    var goals: [GoalInfo] = []
     
     // Consolidated output from OutputConsolidator (set on "complete" event)
     var consolidatedOutput: ConsolidatedOutput?
+    
+    // Workflow canvas selection (goalId); nil = nothing selected
+    var selectedWorkflowNodeId: String?
 
     init(id: UUID = UUID(), query: String) {
         self.id = id
         self.query = query
         self.status = .planning
         self.timestamp = Date()
+    }
+    
+    /// Generate a YAML-like workflow template from goals and their steps
+    var workflowYAML: String {
+        var lines: [String] = []
+        for (index, goal) in goals.enumerated() {
+            lines.append("- id: \(goal.goalId)")
+            lines.append("  tool: \(goal.pluginId)")
+            if !goal.steps.isEmpty {
+                lines.append("  steps:")
+                for step in goal.steps {
+                    lines.append("    - step_id: \(step.stepId)")
+                    lines.append("      skill: \(step.skillId)")
+                    lines.append("      description: \(step.description)")
+                }
+            }
+            if index > 0 {
+                let prev = goals[index - 1]
+                lines.append("  needs:")
+                lines.append("    - \(prev.goalId)")
+            }
+            lines.append("  description: \(goal.description)")
+            lines.append("")
+        }
+        return lines.joined(separator: "\n")
     }
 }
 
@@ -1091,7 +1093,6 @@ final class GoalInfo: Identifiable {
     var status: GoalExecutionStatus
     var steps: [GoalStepInfo] = []
     var requiredInputs: [ContextFieldInfo] = []
-    var isExpanded: Bool = false
     
     init(id: UUID = UUID(), goalId: String, description: String, pluginId: String, status: GoalExecutionStatus = .pending) {
         self.id = id
@@ -1146,33 +1147,6 @@ struct ContextFieldInfo: Identifiable {
         self.required = required
         self.fieldType = fieldType
     }
-}
-
-/// Thought/action proposed by the ReAct agent
-struct ThoughtData {
-    let reasoning: String
-    let actionType: String  // execute_skill, finish, clarify
-    let skillId: String?
-    let params: [String: Any]
-    let inputSources: [String: String]
-    let planStepRef: String?  // Reference to plan step this corresponds to
-}
-
-/// Single entry in the execution trajectory
-struct TrajectoryEntry {
-    let iteration: Int
-    let state: String
-    let thought: ThoughtData
-    let observation: ObservationData?
-    let timestamp: Date
-}
-
-/// Observation from skill execution
-struct ObservationData {
-    let success: Bool
-    let artifact: OutputArtifact?
-    let error: String?
-    let summary: String
 }
 
 enum SessionStatus: String, Codable {

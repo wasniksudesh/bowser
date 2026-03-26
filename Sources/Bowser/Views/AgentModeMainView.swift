@@ -43,12 +43,25 @@ struct AgentModeMainView: View {
     // MARK: - Main Content View
     
     private func mainContentView(session: AgentSession) -> some View {
+        let hasGoals = !session.goals.isEmpty
+        let showWorkflowLayout = hasGoals && session.status != .planning
+        
+        return Group {
+            if showWorkflowLayout {
+                workflowLayoutView(session: session)
+            } else {
+                planningPhaseView(session: session)
+            }
+        }
+    }
+    
+    // MARK: - Planning Phase (vertical scroll, before workflow is ready)
+    
+    private func planningPhaseView(session: AgentSession) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Query Header
                 AgentQueryHeaderView(query: session.query, status: session.status)
                 
-                // Goal Plan Approval (when awaiting approval)
                 if session.status == .awaitingApproval, let plan = session.executionPlan {
                     GoalPlanApprovalView(
                         plan: plan,
@@ -65,55 +78,92 @@ struct AgentModeMainView: View {
                     )
                 }
                 
-                // Run Agent Button (shown after plan approval to start the execution loop)
-                // This button starts the backend loop which will then emit goal events
-                if session.executionPlan != nil &&
-                   session.status == .ready {
-                    Button(action: {
-                        Task {
-                            await agentState.runAgent()
-                        }
-                    }) {
-                        HStack {
-                            Image(systemName: "play.circle.fill")
-                            Text("Start Agent Execution")
-                        }
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.blue)
-                        .cornerRadius(12)
+                if session.status == .planning {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Planning workflow...")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
                     .padding(.horizontal, 20)
                 }
                 
-                // Goal-by-Goal Execution View
-                // Show ONLY after execution has started (status is .running or later)
-                if !session.goals.isEmpty && 
-                   (session.status == .running || 
-                    session.status == .awaitingInput ||
-                    session.status == .completed ||
-                    session.status == .failed) {
-                    GoalExecutionView(session: session, agentState: agentState)
-                }
-                
-                // Consolidated Output (shown when agent completes)
-                if session.status == .completed, let output = session.consolidatedOutput {
-                    AgentCompletionSection(
-                        output: output,
-                        session: session,
-                        browserState: browserState
-                    )
-                }
-                
-                // Bottom padding for chat bar
-                Spacer()
-                    .frame(height: 80)
+                Spacer().frame(height: 80)
             }
             .padding(.top, 20)
         }
+    }
+    
+    // MARK: - Workflow Layout (canvas + sidebar, after goals exist)
+    
+    private func workflowLayoutView(session: AgentSession) -> some View {
+        VStack(spacing: 0) {
+            // Compact top bar with query + status
+            AgentQueryHeaderView(query: session.query, status: session.status)
+                .padding(.bottom, 8)
+            
+            Divider()
+            
+            // Workflow canvas (left) + sidebar (right)
+            // HSplitView renders a draggable divider between the two panes.
+            // No idealWidth on either child — letting HSplitView own the split position.
+            HSplitView {
+                WorkflowCanvasWithRunButton(
+                    session: session,
+                    agentState: agentState
+                )
+                .frame(minWidth: 180, maxWidth: .infinity, maxHeight: .infinity)
+                
+                WorkflowSidebarView(session: session, browserState: browserState, agentState: agentState)
+                    .frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxHeight: .infinity)
+            
+            // Completion actions at bottom
+            if session.status == .completed, let output = session.consolidatedOutput {
+                Divider()
+                completionActionsBar(output: output, session: session)
+            }
+            
+            Spacer().frame(height: 70)
+        }
+    }
+    
+    // (Run button is now inside WorkflowCanvasWithRunButton)
+    
+    // MARK: - Completion Actions Bar
+    
+    private func completionActionsBar(output: ConsolidatedOutput, session: AgentSession) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(.green)
+            
+            Text("Workflow completed")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.primary)
+            
+            Text(output.componentType)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.blue)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.blue.opacity(0.1))
+                )
+            
+            Spacer()
+            
+            WorkflowCompletionButtons(
+                output: output,
+                session: session,
+                browserState: browserState
+            )
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
     }
     
     // MARK: - Empty State View
@@ -183,154 +233,321 @@ struct AgentModeMainView: View {
         .buttonStyle(.plain)
     }
     
-    // MARK: - Running Indicator
-    
-    private var runningIndicatorView: some View {
-        HStack(spacing: 12) {
-            ProgressView()
-                .controlSize(.regular)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Agent is thinking...")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.primary)
-                
-                Text("Listening for events from ReAct loop")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.cyan.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.cyan.opacity(0.3), lineWidth: 1)
-                )
-        )
-        .padding(.horizontal, 20)
-    }
 }
 
 
 // =============================================================================
-// MARK: - Agent Completion Section
+// MARK: - Workflow Canvas with Run Button
 // =============================================================================
 
-/// Shows the consolidated output and action buttons (Schedule, Export as Widget)
-struct AgentCompletionSection: View {
+/// Wraps WorkflowCanvasView in a bright-bordered box with inputs at the bottom
+/// and a small "Run" button on the bottom boundary edge.
+struct WorkflowCanvasWithRunButton: View {
+    
+    @Bindable var session: AgentSession
+    let agentState: AgentState
+    
+    private var showRunButton: Bool {
+        session.executionPlan != nil
+            && session.status == .ready
+            && !session.goals.contains(where: { $0.status == .awaitingStart })
+    }
+    
+    private let runButtonHeight: CGFloat = 30
+    
+    private var canvasBorderShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 10,
+            bottomLeadingRadius: 10,
+            bottomTrailingRadius: 0,
+            topTrailingRadius: 0
+        )
+    }
+    
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            WorkflowCanvasView(session: session)
+                .clipShape(canvasBorderShape)
+                .overlay(
+                    canvasBorderShape
+                        .stroke(Color.blue.opacity(0.45), lineWidth: 1.5)
+                )
+                .padding(.leading, 16)
+                .padding(.trailing, 0)
+                .padding(.top, 12)
+                .padding(.bottom, showRunButton ? runButtonHeight / 2 : 0)
+            
+            if showRunButton {
+                Button(action: {
+                    Task {
+                        await agentState.runAgent()
+                    }
+                }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 9))
+                        Text("Run")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.blue)
+                    )
+                    .frame(height: runButtonHeight)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+// =============================================================================
+// MARK: - Workflow Inputs Section
+// =============================================================================
+
+/// Auth tokens and required inputs bar shown above the workflow canvas
+/// when a goal is awaiting start and needs user-provided values.
+struct WorkflowInputsSection: View {
+    
+    @Bindable var goal: GoalInfo
+    let session: AgentSession
+    let agentState: AgentState
+    @State private var inputValues: [String: String] = [:]
+    
+    private var hasAuthFields: Bool {
+        guard let auth = session.contextArtifact?.auth else { return false }
+        return !auth.isEmpty
+    }
+    
+    private var allAuthFilled: Bool {
+        guard let auth = session.contextArtifact?.auth else { return true }
+        return !auth.values.contains { $0.value.isEmpty }
+    }
+    
+    private var canStart: Bool {
+        for field in goal.requiredInputs where field.required {
+            if inputValues[field.name]?.isEmpty ?? true {
+                return false
+            }
+        }
+        if !allAuthFilled { return false }
+        return true
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack(spacing: 8) {
+                Image(systemName: "rectangle.and.pencil.and.ellipsis")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.orange)
+                
+                Text("Inputs Required")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                
+                Spacer()
+                
+                Text(goal.description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            
+            // Auth inputs
+            if hasAuthFields, let auth = session.contextArtifact?.auth {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Authentication")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    
+                    ForEach(Array(auth.keys.sorted()), id: \.self) { authId in
+                        if let authEntry = auth[authId] {
+                            HStack(spacing: 10) {
+                                HStack(spacing: 4) {
+                                    Text(authId.replacingOccurrences(of: "_", with: " ").capitalized)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(.primary)
+                                    
+                                    if !authEntry.value.isEmpty {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.green)
+                                    }
+                                }
+                                .frame(width: 140, alignment: .leading)
+                                
+                                SecureField("Enter \(authEntry.strategyUsed)", text: Binding(
+                                    get: { session.contextArtifact?.auth[authId]?.value ?? "" },
+                                    set: { newValue in
+                                        session.contextArtifact?.auth[authId]?.value = newValue
+                                        session.contextArtifact?.auth[authId]?.valid = !newValue.isEmpty
+                                    }
+                                ))
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 12))
+                                .padding(8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color(nsColor: .textBackgroundColor))
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Required field inputs
+            if !goal.requiredInputs.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Parameters")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    
+                    ForEach(goal.requiredInputs) { field in
+                        HStack(spacing: 10) {
+                            HStack(spacing: 2) {
+                                Text(field.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(.primary)
+                                if field.required {
+                                    Text("*")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(.red)
+                                }
+                            }
+                            .frame(width: 120, alignment: .leading)
+                            
+                            if field.fieldType == "secret" {
+                                SecureField(field.description, text: Binding(
+                                    get: { inputValues[field.name] ?? "" },
+                                    set: { inputValues[field.name] = $0 }
+                                ))
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 12))
+                                .padding(8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color(nsColor: .textBackgroundColor))
+                                )
+                            } else {
+                                TextField(field.description, text: Binding(
+                                    get: { inputValues[field.name] ?? "" },
+                                    set: { inputValues[field.name] = $0 }
+                                ))
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 12))
+                                .padding(8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color(nsColor: .textBackgroundColor))
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Start button
+            HStack {
+                Spacer()
+                
+                Button(action: {
+                    Task {
+                        await agentState.startGoalExecution(
+                            goalId: goal.goalId,
+                            inputValues: inputValues.isEmpty ? nil : inputValues
+                        )
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.circle.fill")
+                        Text("Start Execution")
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(canStart ? Color.green : Color.green.opacity(0.4))
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(!canStart)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+}
+
+// =============================================================================
+// MARK: - Workflow Completion Buttons
+// =============================================================================
+
+/// Compact Schedule/Export buttons for the workflow completion bar
+struct WorkflowCompletionButtons: View {
     
     let output: ConsolidatedOutput
     let session: AgentSession
     @Bindable var browserState: BrowserState
-    @State private var showScheduleSheet = false
     @State private var exportStatus: String?
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Section header
-            HStack {
-                Image(systemName: "sparkles.rectangle.stack")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.green)
-                
-                Text("Agent Output")
-                    .font(.system(size: 15, weight: .semibold))
-                
-                Spacer()
-                
-                Text(output.componentType)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.blue)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.blue.opacity(0.1))
-                    )
+        HStack(spacing: 8) {
+            Button(action: { /* TODO: implement schedule sheet */ }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "clock.arrow.circlepath")
+                    Text("Schedule")
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                )
             }
+            .buttonStyle(.plain)
             
-            // Rendered output
-            AgentOutputView(
-                componentType: output.componentType,
-                componentData: output.componentData,
-                summary: output.summary,
-                compact: false,
-                browserState: browserState
-            )
+            Button(action: { exportAsWidget() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "rectangle.on.rectangle")
+                    Text("Export Widget")
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                )
+            }
+            .buttonStyle(.plain)
             
-            // Action buttons
-            HStack(spacing: 12) {
-                // Schedule button
-                Button(action: { showScheduleSheet = true }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "clock.arrow.circlepath")
-                        Text("Schedule Daily")
-                    }
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.blue)
-                    )
-                }
-                .buttonStyle(.plain)
-                
-                // Export as Widget button
-                Button(action: { exportAsWidget() }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "rectangle.on.rectangle")
-                        Text("Export as Widget")
-                    }
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.purple)
-                    )
-                }
-                .buttonStyle(.plain)
-                
-                Spacer()
-                
-                if let status = exportStatus {
-                    Text(status)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .transition(.opacity)
-                }
+            if let status = exportStatus {
+                Text(status)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.green.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.green.opacity(0.2), lineWidth: 1)
-                )
-        )
-        .padding(.horizontal, 20)
     }
     
     private func exportAsWidget() {
         Task {
-            exportStatus = "Creating widget..."
+            exportStatus = "Creating..."
             do {
-                // Build the request to create a scheduled widget
                 let url = URL(string: "http://localhost:8765/api/widgets/create")!
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 
-                // Build goal_plan from session execution plan
                 var goalPlanDict: [String: Any] = ["plan_id": session.id.uuidString, "goals": []]
                 if let plan = session.executionPlan {
                     let goals = plan.steps.map { step -> [String: Any] in
@@ -358,14 +575,13 @@ struct AgentCompletionSection: View {
                 
                 guard let httpResponse = response as? HTTPURLResponse,
                       httpResponse.statusCode == 200 else {
-                    exportStatus = "Failed to create widget"
+                    exportStatus = "Failed"
                     return
                 }
                 
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
                 let widgetId = json?["widget_id"] as? String ?? ""
                 
-                // Add to homescreen widget manager
                 let widgetInstance = HomescreenWidgetInstance(
                     widgetId: widgetId,
                     agentDefinitionId: session.id,
@@ -375,16 +591,15 @@ struct AgentCompletionSection: View {
                 )
                 browserState.widgetManager.addWidget(widgetInstance)
                 
-                // Cache the current output data
                 if let componentData = output.componentData {
                     browserState.widgetManager.updateCachedData(widgetId: widgetId, data: componentData)
                 }
                 
                 withAnimation {
-                    exportStatus = "Widget created! (\(widgetId))"
+                    exportStatus = "Done!"
                 }
             } catch {
-                exportStatus = "Error: \(error.localizedDescription)"
+                exportStatus = "Error"
             }
         }
     }

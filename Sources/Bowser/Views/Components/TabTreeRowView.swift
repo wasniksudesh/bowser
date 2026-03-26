@@ -294,6 +294,9 @@ struct TabTreeRowView: View {
         Button("Pin Tab") { onPin() }
         Button("Open as Child Tab") { onOpenChildTab() }
         Divider()
+        Button("Copy as Link") {
+            NSPasteboard.general.setRichLink(title: tab.title, url: tab.url)
+        }
         Button("Copy URL") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(tab.url.absoluteString, forType: .string)

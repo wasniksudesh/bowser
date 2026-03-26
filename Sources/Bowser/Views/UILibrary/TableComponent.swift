@@ -33,7 +33,6 @@ struct TableData {
 // MARK: - Table Component
 // =============================================================================
 
-/// Reusable table component with sortable columns
 struct TableComponent: View {
     
     let data: TableData?
@@ -46,7 +45,7 @@ struct TableComponent: View {
         VStack(spacing: 0) {
             if isLoading {
                 loadingState
-            } else if let data = data {
+            } else if let data = data, !data.columns.isEmpty {
                 tableContent(data: data)
             } else {
                 emptyState
@@ -62,86 +61,77 @@ struct TableComponent: View {
     
     private func tableContent(data: TableData) -> some View {
         ScrollView([.horizontal, .vertical]) {
-            VStack(spacing: 0) {
-                // Header row
-                headerRow(columns: data.columns)
+            Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+                // Header
+                GridRow {
+                    ForEach(data.columns) { column in
+                        headerCell(column: column)
+                    }
+                }
                 
                 Divider()
+                    .gridCellUnsizedAxes(.horizontal)
                 
-                // Data rows
+                // Rows
                 ForEach(Array(sortedRows(data: data).enumerated()), id: \.offset) { index, row in
-                    dataRow(row: row, index: index)
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { colIndex, cell in
+                            dataCell(text: cell, isAlt: index % 2 != 0)
+                        }
+                    }
                     
                     if index < data.rows.count - 1 {
                         Divider()
+                            .gridCellUnsizedAxes(.horizontal)
                     }
-                }
-            }
-        }
-        .frame(maxHeight: 400)
-    }
-    
-    // MARK: - Header Row
-    
-    private func headerRow(columns: [TableColumn]) -> some View {
-        HStack(spacing: 0) {
-            ForEach(columns) { column in
-                Button(action: {
-                    if sortColumn == column.key {
-                        sortAscending.toggle()
-                    } else {
-                        sortColumn = column.key
-                        sortAscending = true
-                    }
-                }) {
-                    HStack(spacing: 4) {
-                        Text(column.label)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.primary)
-                        
-                        if sortColumn == column.key {
-                            Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .frame(minWidth: 100, maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .background(Color(nsColor: .controlColor).opacity(0.2))
-                
-                if column.id != columns.last?.id {
-                    Divider()
                 }
             }
         }
     }
     
-    // MARK: - Data Row
+    // MARK: - Cells
     
-    private func dataRow(row: [String], index: Int) -> some View {
-        HStack(spacing: 0) {
-            ForEach(Array(row.enumerated()), id: \.offset) { colIndex, cell in
-                Text(cell)
-                    .font(.system(size: 12))
+    private func headerCell(column: TableColumn) -> some View {
+        Button(action: {
+            if sortColumn == column.key {
+                sortAscending.toggle()
+            } else {
+                sortColumn = column.key
+                sortAscending = true
+            }
+        }) {
+            HStack(spacing: 4) {
+                Text(column.label)
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .frame(minWidth: 100, maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        index % 2 == 0
-                            ? Color.clear
-                            : Color(nsColor: .controlColor).opacity(0.05)
-                    )
                 
-                if colIndex < row.count - 1 {
-                    Divider()
+                if sortColumn == column.key {
+                    Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
                 }
+                
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(minWidth: 100)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .background(Color(nsColor: .controlColor).opacity(0.2))
+    }
+    
+    private func dataCell(text: String, isAlt: Bool) -> some View {
+        Text(text)
+            .font(.system(size: 12))
+            .foregroundStyle(.primary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minWidth: 100, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(isAlt ? Color(nsColor: .controlColor).opacity(0.05) : Color.clear)
     }
     
     // MARK: - Sorted Rows
@@ -160,12 +150,10 @@ struct TableComponent: View {
             let val1 = row1[columnIndex]
             let val2 = row2[columnIndex]
             
-            // Try numeric comparison first
             if let num1 = Double(val1), let num2 = Double(val2) {
                 return sortAscending ? num1 < num2 : num1 > num2
             }
             
-            // Fall back to string comparison
             return sortAscending ? val1 < val2 : val1 > val2
         }
     }
@@ -211,17 +199,16 @@ struct TableComponent_Previews: PreviewProvider {
     static var previews: some View {
         let data = TableData(
             columns: [
-                TableColumn(key: "sha", label: "SHA"),
-                TableColumn(key: "message", label: "Message"),
-                TableColumn(key: "author", label: "Author"),
-                TableColumn(key: "date", label: "Date")
+                TableColumn(key: "by", label: "By"),
+                TableColumn(key: "hn_id", label: "Hn_Id"),
+                TableColumn(key: "score", label: "Score"),
+                TableColumn(key: "time", label: "Time"),
+                TableColumn(key: "title", label: "Title")
             ],
             rows: [
-                ["abc123", "Initial commit", "John Doe", "2024-01-15"],
-                ["def456", "Add feature X", "Jane Smith", "2024-01-16"],
-                ["ghi789", "Fix bug in Y", "Bob Johnson", "2024-01-17"],
-                ["jkl012", "Update docs", "Alice Brown", "2024-01-18"],
-                ["mno345", "Refactor code", "Charlie Davis", "2024-01-19"]
+                ["andrew_zhong", "47526486", "50", "2026-03-26T03:55:52+00:00", "Show HN: Robust LLM Extractor"],
+                ["RicDan", "47528914", "3", "2026-03-26T10:54:28+00:00", "Show HN: Alexandria, free open-source news aggregation and classification suite"],
+                ["virtuallytd", "47528178", "2", "2026-03-26T09:08:41+00:00", "Show HN: Hooky – AI powered webhooks"]
             ]
         )
         
@@ -230,7 +217,7 @@ struct TableComponent_Previews: PreviewProvider {
             TableComponent(data: nil, isLoading: true)
         }
         .padding(20)
-        .frame(width: 700)
+        .frame(width: 800)
     }
 }
 #endif

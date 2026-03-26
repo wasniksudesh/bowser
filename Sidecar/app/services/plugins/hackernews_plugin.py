@@ -201,13 +201,20 @@ def get_hackernews_plugin() -> Plugin:
                         "image": {"type": "string"}
                     }
                 },
-                output_type="text",
+                output_type="carousel",
                 execution_type="sdk",
                 execute=_describe_product,
                 domains=["hackernews", "web", "analysis"],
                 verbs=["describe", "analyze", "summarize"],
                 nouns=["product", "startup", "project", "description"],
-                output_types=["text", "textBlock", "custom"]
+                output_types=["carousel", "text", "textBlock"],
+                output_ui_component="carousel",
+                output_field_mapping={
+                    "title": "title",
+                    "image": "image",
+                    "url": "url",
+                    "description": "description",
+                }
             )
         ]
     )

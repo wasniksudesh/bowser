@@ -67,11 +67,24 @@ struct AgentOutputView: View {
     @ViewBuilder
     private func renderCarousel() -> some View {
         if let dataArray = componentData as? [[String: Any]] {
-            let images = dataArray.compactMap { dict -> CarouselImageData? in
-                guard let url = dict["url"] as? String else { return nil }
-                return CarouselImageData(url: url, caption: dict["caption"] as? String)
+            let cards = dataArray.compactMap { dict -> CarouselCardData? in
+                // Rich product card shape: {title, image?, url?, description?}
+                if let title = dict["title"] as? String {
+                    return CarouselCardData(
+                        title: title,
+                        description: dict["description"] as? String,
+                        image: dict["image"] as? String,
+                        url: dict["url"] as? String,
+                        caption: dict["caption"] as? String
+                    )
+                }
+                // Legacy image-only shape: {url, caption?}
+                if let url = dict["url"] as? String {
+                    return CarouselCardData(legacyURL: url, caption: dict["caption"] as? String)
+                }
+                return nil
             }
-            CarouselComponent(images: images, isLoading: false)
+            CarouselComponent(images: cards, isLoading: false)
         } else {
             CarouselComponent(images: [], isLoading: false)
         }

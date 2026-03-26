@@ -495,11 +495,12 @@ struct WorkflowCompletionButtons: View {
     let output: ConsolidatedOutput
     let session: AgentSession
     @Bindable var browserState: BrowserState
+    @State private var showScheduleSheet = false
     @State private var exportStatus: String?
     
     var body: some View {
         HStack(spacing: 8) {
-            Button(action: { /* TODO: implement schedule sheet */ }) {
+            Button(action: { showScheduleSheet = true }) {
                 HStack(spacing: 4) {
                     Image(systemName: "clock.arrow.circlepath")
                     Text("Schedule")
@@ -515,7 +516,7 @@ struct WorkflowCompletionButtons: View {
             }
             .buttonStyle(.plain)
             
-            Button(action: { exportAsWidget() }) {
+            Button(action: { exportAsWidget(frequency: "daily") }) {
                 HStack(spacing: 4) {
                     Image(systemName: "rectangle.on.rectangle")
                     Text("Export Widget")
@@ -537,9 +538,20 @@ struct WorkflowCompletionButtons: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .sheet(isPresented: $showScheduleSheet) {
+            ScheduleSheetView(
+                query: session.query,
+                outputType: output.componentType,
+                onSchedule: { frequency in
+                    showScheduleSheet = false
+                    exportAsWidget(frequency: frequency)
+                },
+                onCancel: { showScheduleSheet = false }
+            )
+        }
     }
     
-    private func exportAsWidget() {
+    private func exportAsWidget(frequency: String = "daily") {
         Task {
             exportStatus = "Creating..."
             do {
@@ -567,7 +579,7 @@ struct WorkflowCompletionButtons: View {
                     "goal_plan": goalPlanDict,
                     "output_component_type": output.componentType,
                     "folder_id": browserState.currentFolderId?.uuidString ?? "",
-                    "frequency": "daily"
+                    "frequency": frequency
                 ]
                 
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -602,6 +614,114 @@ struct WorkflowCompletionButtons: View {
                 exportStatus = "Error"
             }
         }
+    }
+}
+
+// =============================================================================
+// MARK: - Schedule Sheet View
+// =============================================================================
+
+/// Sheet for choosing a schedule frequency before creating a widget
+struct ScheduleSheetView: View {
+    
+    let query: String
+    let outputType: String
+    let onSchedule: (String) -> Void
+    let onCancel: () -> Void
+    
+    @State private var selectedFrequency: String = "daily"
+    
+    private let frequencies = [
+        ("hourly", "Hourly"),
+        ("daily", "Daily"),
+        ("weekly", "Weekly"),
+    ]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 8) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 18))
+                    .foregroundStyle(.blue)
+                Text("Schedule Workflow")
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Query")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(query)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+            }
+            
+            HStack(spacing: 6) {
+                Text("Output:")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(outputType)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.blue)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.blue.opacity(0.1))
+                    )
+            }
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Frequency")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                
+                Picker("", selection: $selectedFrequency) {
+                    ForEach(frequencies, id: \.0) { value, label in
+                        Text(label).tag(value)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            
+            HStack {
+                Button(action: onCancel) {
+                    Text("Cancel")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                        )
+                }
+                .buttonStyle(.plain)
+                
+                Spacer()
+                
+                Button(action: { onSchedule(selectedFrequency) }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.badge.checkmark")
+                        Text("Schedule")
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.blue)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(24)
+        .frame(width: 380)
     }
 }
 

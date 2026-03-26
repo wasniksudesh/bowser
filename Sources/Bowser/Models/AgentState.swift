@@ -155,14 +155,13 @@ final class AgentState {
             let status = json?["status"] as? String
             
             if status == "approved" {
-                // Update the plan status to approved
+                session.snapshotCurrentPlan(outcome: .approved)
                 session.executionPlan?.status = "approved"
                 session.status = .ready
             } else if status == "revised" {
-                // Plan was revised, parse the new goal_plan
+                session.snapshotCurrentPlan(outcome: .rejected)
                 if let goalPlanData = json?["goal_plan"] as? [String: Any] {
                     session.executionPlan = try parseGoalPlanToExecutionPlan(from: goalPlanData)
-                    // Also update goals array
                     session.goals = parseGoalsArray(from: goalPlanData)
                 }
                 // Update required_auth if changed
@@ -296,11 +295,10 @@ final class AgentState {
             }
             
         case "goal_plan_revised":
-            // Goal plan revised after feedback
+            session.snapshotCurrentPlan(outcome: .superseded)
             if let goalPlanData = data["goal_plan"] as? [String: Any] {
                 do {
                     session.executionPlan = try parseGoalPlanToExecutionPlan(from: goalPlanData)
-                    // Also update goals array
                     session.goals = parseGoalsArray(from: goalPlanData)
                 } catch {
                     print("Error parsing revised goal plan: \(error)")
@@ -392,12 +390,10 @@ final class AgentState {
             // Individual step finished - update step status and store output
             if let stepId = data["step_id"] as? String,
                let success = data["success"] as? Bool {
-                // Find the goal and step
                 for goal in session.goals {
                     if let step = goal.steps.first(where: { $0.stepId == stepId }) {
                         step.status = success ? .completed : .failed
                         
-                        // Parse and store output artifact
                         if success,
                            let view = data["view"] as? String,
                            let dataPacket = data["data"] as? [String: Any] {
@@ -409,6 +405,13 @@ final class AgentState {
                                 )
                             } catch {
                                 print("Error parsing step output: \(error)")
+                            }
+                        }
+                        
+                        if !success {
+                            let stepError = data["error"] as? String ?? data["message"] as? String
+                            if let stepError = stepError, goal.errorMessage == nil {
+                                goal.errorMessage = stepError
                             }
                         }
                         break
@@ -427,9 +430,11 @@ final class AgentState {
             }
             
         case "goal_failed":
-            let goalIndex = session.currentGoalIndex
+            let goalIndex = data["goal_index"] as? Int ?? session.currentGoalIndex
             if goalIndex < session.goals.count {
                 session.goals[goalIndex].status = .failed
+                let errorMsg = data["error"] as? String ?? data["message"] as? String
+                session.goals[goalIndex].errorMessage = errorMsg
             }
             
         case "final_evaluated":
@@ -502,11 +507,21 @@ final class AgentState {
                 }
             }()
             
+            var isForeach = false
+            var foreachSource: String? = nil
+            if let foreachData = goalData["foreach"] as? [String: Any],
+               let source = foreachData["source"] as? String {
+                isForeach = true
+                foreachSource = source
+            }
+            
             return GoalInfo(
                 goalId: goalId,
                 description: description,
                 pluginId: pluginId,
-                status: status
+                status: status,
+                isForeach: isForeach,
+                foreachSource: foreachSource
             )
         }
     }
@@ -928,6 +943,25 @@ final class AgentState {
             let textData = TextArtifactData(content: jsonString, format: "json")
             artifactData = .text(textData)
             
+        case "carousel":
+            let cards = rows.compactMap { row -> CarouselCardData? in
+                // Rich product card shape: {title, image?, url?, description?}
+                if let title = row["title"] as? String {
+                    return CarouselCardData(
+                        title: title,
+                        description: row["description"] as? String,
+                        image: row["image"] as? String,
+                        url: row["url"] as? String
+                    )
+                }
+                // Legacy shape: {url, caption?}
+                if let url = row["url"] as? String {
+                    return CarouselCardData(legacyURL: url, caption: row["caption"] as? String)
+                }
+                return nil
+            }
+            artifactData = .carousel(CarouselArtifactData(cards: cards))
+
         default:
             // Unknown view type - fallback to JSON
             let jsonData = try JSONSerialization.data(withJSONObject: rows, options: .prettyPrinted)
@@ -1049,12 +1083,28 @@ final class AgentSession: Identifiable {
     
     // Workflow canvas selection (goalId); nil = nothing selected
     var selectedWorkflowNodeId: String?
+    
+    // Plan revision history
+    var planVersions: [PlanVersion] = []
 
     init(id: UUID = UUID(), query: String) {
         self.id = id
         self.query = query
         self.status = .planning
         self.timestamp = Date()
+    }
+    
+    /// Snapshot the current plan into planVersions before it gets overwritten
+    func snapshotCurrentPlan(outcome: PlanVersionOutcome) {
+        guard let plan = executionPlan else { return }
+        let version = PlanVersion(
+            versionNumber: planVersions.count + 1,
+            timestamp: Date(),
+            plan: plan,
+            goalDescriptions: goals.map { $0.description },
+            outcome: outcome
+        )
+        planVersions.append(version)
     }
     
     /// Generate a YAML-like workflow template from goals and their steps
@@ -1093,13 +1143,19 @@ final class GoalInfo: Identifiable {
     var status: GoalExecutionStatus
     var steps: [GoalStepInfo] = []
     var requiredInputs: [ContextFieldInfo] = []
+    var isExpanded: Bool = false
+    var isForeach: Bool = false
+    var foreachSource: String?
+    var errorMessage: String?
     
-    init(id: UUID = UUID(), goalId: String, description: String, pluginId: String, status: GoalExecutionStatus = .pending) {
+    init(id: UUID = UUID(), goalId: String, description: String, pluginId: String, status: GoalExecutionStatus = .pending, isForeach: Bool = false, foreachSource: String? = nil) {
         self.id = id
         self.goalId = goalId
         self.description = description
         self.pluginId = pluginId
         self.status = status
+        self.isForeach = isForeach
+        self.foreachSource = foreachSource
     }
 }
 
@@ -1334,6 +1390,7 @@ enum ArtifactData {
     case table(TableArtifactData)
     case list(ListArtifactData)
     case chart(ChartArtifactData)
+    case carousel(CarouselArtifactData)
 }
 
 struct TextArtifactData: Codable {
@@ -1375,6 +1432,10 @@ struct ChartArtifactData: Codable {
 struct ChartDatasetData: Codable {
     let label: String
     let values: [Double]
+}
+
+struct CarouselArtifactData {
+    let cards: [CarouselCardData]
 }
 
 /// Output artifact from an operation agent
@@ -1440,6 +1501,26 @@ struct GoalStatusInfo {
     let status: String
     let retryCount: Int
     let stepsCount: Int
+}
+
+// =============================================================================
+// MARK: - Plan Version
+// =============================================================================
+
+enum PlanVersionOutcome: String {
+    case rejected
+    case superseded
+    case approved
+}
+
+/// Snapshot of a plan revision for the Versions tab
+struct PlanVersion: Identifiable {
+    let id = UUID()
+    let versionNumber: Int
+    let timestamp: Date
+    let plan: ExecutionPlan
+    let goalDescriptions: [String]
+    let outcome: PlanVersionOutcome
 }
 
 // =============================================================================

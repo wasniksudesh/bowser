@@ -64,6 +64,9 @@ struct AgentStepOutputView: View {
             
         case .chart(let data):
             renderChart(data: data)
+
+        case .carousel(let data):
+            renderCarousel(data: data)
         }
     }
     
@@ -108,6 +111,11 @@ struct AgentStepOutputView: View {
         )
         ChartComponent(data: chartData, isLoading: false)
     }
+
+    @ViewBuilder
+    private func renderCarousel(data: CarouselArtifactData) -> some View {
+        CarouselComponent(images: data.cards, isLoading: false)
+    }
     
     // MARK: - Helpers
     
@@ -121,6 +129,8 @@ struct AgentStepOutputView: View {
             return "doc.text"
         case .list:
             return "list.bullet"
+        case .carousel:
+            return "rectangle.stack"
         }
     }
     

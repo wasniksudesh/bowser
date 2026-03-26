@@ -4,7 +4,7 @@
 //
 //  Visual node graph for agent workflow execution.
 //  Displays goals as connected nodes with status indicators.
-//  Read-only: click to select/deselect and view output in sidebar.
+//  Tap to select (drives sidebar output). Double-tap to expand/collapse steps.
 //
 
 import SwiftUI
@@ -17,8 +17,7 @@ struct WorkflowCanvasView: View {
     
     @Bindable var session: AgentSession
     
-    private let nodeWidth: CGFloat = 240
-    private let nodeSpacing: CGFloat = 16
+    private let nodeWidth: CGFloat = 260
     private let connectorHeight: CGFloat = 32
     
     var body: some View {
@@ -40,6 +39,11 @@ struct WorkflowCanvasView: View {
                                     } else {
                                         session.selectedWorkflowNodeId = goal.goalId
                                     }
+                                }
+                            },
+                            onExpandToggle: {
+                                withAnimation(ArcTheme.springAnimation) {
+                                    goal.isExpanded.toggle()
                                 }
                             }
                         )
@@ -74,51 +78,151 @@ struct WorkflowCanvasView: View {
 
 struct WorkflowNodeView: View {
     
-    let goal: GoalInfo
+    @Bindable var goal: GoalInfo
     let isSelected: Bool
     let onTap: () -> Void
+    let onExpandToggle: () -> Void
     
     @State private var isHovering = false
     
-    private let nodeWidth: CGFloat = 240
+    private let nodeWidth: CGFloat = 260
     
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                pluginIcon
-                
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(goal.pluginId)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+        VStack(spacing: 0) {
+            // Main node header
+            Button(action: onTap) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 12) {
+                        pluginIcon
+                        
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 4) {
+                                Text(goal.pluginId)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                
+                                if goal.isForeach {
+                                    foreachBadge
+                                }
+                            }
+                            
+                            Text(goal.description)
+                                .font(.system(size: 13))
+                                .foregroundStyle(.primary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                        }
+                        
+                        Spacer(minLength: 4)
+                        
+                        VStack(spacing: 4) {
+                            statusIndicator
+                            
+                            if !goal.steps.isEmpty {
+                                expandChevron
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
                     
-                    Text(goal.description)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+                    // Inline error bar for failed goals
+                    if goal.status == .failed, let errorMsg = goal.errorMessage {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 10))
+                            Text(errorMsg)
+                                .font(.system(size: 11))
+                                .lineLimit(2)
+                        }
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 10)
+                        .padding(.top, 2)
+                    }
                 }
-                
-                Spacer(minLength: 4)
-                
-                statusIndicator
+                .frame(width: nodeWidth, alignment: .leading)
+                .background(nodeBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(borderColor, lineWidth: isSelected ? 1.5 : 1)
+                )
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(width: nodeWidth, alignment: .leading)
-            .background(nodeBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(borderColor, lineWidth: isSelected ? 1.5 : 1)
-            )
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(ArcTheme.hoverAnimation) {
+                    isHovering = hovering
+                }
+            }
+            
+            // Expanded step list
+            if goal.isExpanded && !goal.steps.isEmpty {
+                expandedStepsView
+            }
+        }
+    }
+    
+    // MARK: - Foreach Badge
+    
+    private var foreachBadge: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "repeat")
+                .font(.system(size: 8, weight: .bold))
+            Text("each")
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .foregroundStyle(.purple)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color.purple.opacity(0.12))
+        )
+        .help(goal.foreachSource.map { "Iterates over: \($0)" } ?? "Fan-out step")
+    }
+    
+    // MARK: - Expand Chevron
+    
+    private var expandChevron: some View {
+        Button(action: onExpandToggle) {
+            Image(systemName: goal.isExpanded ? "chevron.up" : "chevron.down")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16, height: 16)
         }
         .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(ArcTheme.hoverAnimation) {
-                isHovering = hovering
+    }
+    
+    // MARK: - Expanded Steps
+    
+    private var expandedStepsView: some View {
+        VStack(spacing: 0) {
+            // Connecting line from node to steps container
+            Rectangle()
+                .fill(borderColor.opacity(0.4))
+                .frame(width: 1, height: 6)
+            
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(goal.steps.enumerated()), id: \.element.id) { index, step in
+                    WorkflowStepRow(step: step)
+                    
+                    if index < goal.steps.count - 1 {
+                        Divider()
+                            .padding(.leading, 30)
+                    }
+                }
             }
+            .frame(width: nodeWidth - 16)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.2))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+            )
         }
     }
     
@@ -221,6 +325,66 @@ struct WorkflowNodeView: View {
 }
 
 // =============================================================================
+// MARK: - Workflow Step Row
+// =============================================================================
+
+struct WorkflowStepRow: View {
+    
+    let step: GoalStepInfo
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            stepStatusIcon
+            
+            VStack(alignment: .leading, spacing: 1) {
+                Text(step.skillId)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                
+                Text(step.description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+            
+            Spacer(minLength: 2)
+            
+            if step.output != nil {
+                Image(systemName: "eye.circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.blue.opacity(0.7))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+    }
+    
+    @ViewBuilder
+    private var stepStatusIcon: some View {
+        switch step.status {
+        case .pending:
+            Circle()
+                .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
+                .frame(width: 10, height: 10)
+        case .running:
+            ProgressView()
+                .controlSize(.mini)
+                .scaleEffect(0.6)
+                .frame(width: 10, height: 10)
+        case .completed:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.green)
+        case .failed:
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.red)
+        }
+    }
+}
+
+// =============================================================================
 // MARK: - Preview
 // =============================================================================
 
@@ -228,15 +392,26 @@ struct WorkflowNodeView: View {
 struct WorkflowCanvasView_Previews: PreviewProvider {
     static var previews: some View {
         let session = AgentSession(query: "Fetch HN top stories and summarize")
-        session.goals = [
-            GoalInfo(goalId: "G-0", description: "Fetch top 10 stories from Hacker News", pluginId: "hackernews_fetch", status: .completed),
-            GoalInfo(goalId: "G-1", description: "Summarize each story", pluginId: "llm_summarize", status: .executing),
-            GoalInfo(goalId: "G-2", description: "Format output as table", pluginId: "transform_table", status: .pending),
+        let g0 = GoalInfo(goalId: "G-0", description: "Fetch top 10 stories from Hacker News", pluginId: "hackernews_fetch", status: .completed)
+        g0.steps = [
+            GoalStepInfo(stepId: "S-0", skillId: "fetchStories", description: "Fetch top stories from HN API", status: .completed),
+            GoalStepInfo(stepId: "S-1", skillId: "parseStories", description: "Parse story metadata", status: .completed),
         ]
+        g0.isExpanded = true
+        
+        let g1 = GoalInfo(goalId: "G-1", description: "Summarize each story", pluginId: "llm_summarize", status: .executing, isForeach: true, foreachSource: "G-0.stories")
+        g1.steps = [
+            GoalStepInfo(stepId: "S-2", skillId: "summarize", description: "Generate summary for each story", status: .running),
+        ]
+        
+        let g2 = GoalInfo(goalId: "G-2", description: "Format output as table", pluginId: "transform_table", status: .failed)
+        g2.errorMessage = "Transformation failed: missing required field 'title'"
+        
+        session.goals = [g0, g1, g2]
         session.selectedWorkflowNodeId = "G-0"
         
         return WorkflowCanvasView(session: session)
-            .frame(width: 500, height: 500)
+            .frame(width: 500, height: 600)
     }
 }
 #endif

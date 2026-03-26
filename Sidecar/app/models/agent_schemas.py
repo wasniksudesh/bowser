@@ -381,6 +381,8 @@ class Skill(BaseModel):
     output_types: List[str]
     output_schema: Dict[str, Any] = Field(default_factory=dict)
     plugin_id: Optional[str] = Field(None)
+    output_ui_component: Optional[str] = Field(None, description="Preferred UIComponent type (e.g. 'carousel', 'spotList')")
+    output_field_mapping: Optional[Dict[str, str]] = Field(None, description="Maps component expected fields to skill output fields: {component_field: skill_field}")
 
 
 class SkillMetadata(BaseModel):
@@ -396,6 +398,8 @@ class SkillMetadata(BaseModel):
     output_type: str = Field(default="text", description="text | table | json | error")
     input_schema: Dict[str, Any] = Field(default_factory=dict)
     output_schema: Dict[str, Any] = Field(default_factory=dict)
+    output_ui_component: Optional[str] = Field(None, description="Preferred UIComponent type (e.g. 'carousel', 'spotList')")
+    output_field_mapping: Optional[Dict[str, str]] = Field(None, description="Maps component expected fields to skill output fields: {component_field: skill_field}")
 
 
 class SkillCandidate(BaseModel):

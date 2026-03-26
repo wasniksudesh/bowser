@@ -12,6 +12,7 @@
 3. Encryption on diskwrites in VM
 4. Log+Audit every ai-action on VM 
 5. AI-Action Anamoly detector
+6. Configurable VM disk space by user. (Useful when terminal is integrated).
 
 ### AI Backend
 1. if AI key is not configured, backend loops making call over and over to LLM with 5xx/4xx errors
@@ -21,7 +22,7 @@
 2. ITs to add 
 
 ### Features 
-1. Snapshot, Downladed Files -> Not implemented
+1. Downladed Files -> Not implemented
 2. "Files" button should show all Notes, Snapshots, DownloadedFiles. 
 3. Implement fly-cut.
 4. Agent <-> Widget integration (Skill should write Carousel and widget should display it) (plan => scheduled_agents_and_widgets)

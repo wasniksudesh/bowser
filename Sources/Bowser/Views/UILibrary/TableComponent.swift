@@ -37,6 +37,7 @@ struct TableComponent: View {
     
     let data: TableData?
     let isLoading: Bool
+    var maxColumnWidth: CGFloat = 280
     
     @State private var sortColumn: String? = nil
     @State private var sortAscending: Bool = true
@@ -104,6 +105,7 @@ struct TableComponent: View {
                 Text(column.label)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
+                    .lineLimit(nil)
                 
                 if sortColumn == column.key {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
@@ -115,7 +117,7 @@ struct TableComponent: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .frame(minWidth: 100)
+            .frame(minWidth: 100, maxWidth: maxColumnWidth)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -127,8 +129,8 @@ struct TableComponent: View {
             .font(.system(size: 12))
             .foregroundStyle(.primary)
             .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(minWidth: 100, alignment: .leading)
+            .lineLimit(nil)
+            .frame(minWidth: 100, maxWidth: maxColumnWidth, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(isAlt ? Color(nsColor: .controlColor).opacity(0.05) : Color.clear)

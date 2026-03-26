@@ -215,34 +215,83 @@ struct WorkflowSidebarView: View {
     // MARK: - Versions Tab
     
     private var versionsTabView: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.green)
+        let currentVersionNumber = session.planVersions.count + 1
+        
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
+                // Current (active) version
+                versionRow(
+                    label: "v\(currentVersionNumber) - Current",
+                    timestamp: session.planVersions.last?.timestamp ?? session.timestamp,
+                    icon: "checkmark.circle.fill",
+                    iconColor: .green,
+                    goalCount: session.goals.count,
+                    isActive: true
+                )
                 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("v1 - Current")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.primary)
-                    
-                    Text(formatTimestamp(session.timestamp))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                // Past versions (newest first)
+                ForEach(session.planVersions.reversed()) { version in
+                    versionRow(
+                        label: "v\(version.versionNumber)",
+                        timestamp: version.timestamp,
+                        icon: version.outcome == .rejected ? "xmark.circle.fill" : "arrow.triangle.2.circlepath",
+                        iconColor: version.outcome == .rejected ? .red : .secondary,
+                        goalCount: version.goalDescriptions.count,
+                        isActive: false,
+                        outcome: version.outcome
+                    )
                 }
                 
                 Spacer()
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(ArcTheme.activeTabBackground)
-            )
             .padding(12)
+        }
+    }
+    
+    private func versionRow(label: String, timestamp: Date, icon: String, iconColor: Color, goalCount: Int, isActive: Bool, outcome: PlanVersionOutcome? = nil) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(iconColor)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(label)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(isActive ? .primary : .secondary)
+                    
+                    if let outcome = outcome {
+                        Text(outcome.rawValue.capitalized)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(outcome == .rejected ? .red : .secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill((outcome == .rejected ? Color.red : Color.secondary).opacity(0.1))
+                            )
+                    }
+                }
+                
+                HStack(spacing: 8) {
+                    Text(formatTimestamp(timestamp))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    
+                    Text("\(goalCount) goals")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+            }
             
             Spacer()
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isActive ? ArcTheme.activeTabBackground : Color.clear)
+        )
     }
     
     // MARK: - Helpers

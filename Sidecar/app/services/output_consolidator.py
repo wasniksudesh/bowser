@@ -18,11 +18,11 @@ logger = logging.getLogger(__name__)
 COMPONENT_METADATA = [
     {
         "type": "carousel",
-        "displayName": "Image Carousel",
-        "description": "Horizontal scrollable carousel of images with optional captions. Best for visual content with images.",
-        "requiredFields": ["url"],
-        "optionalFields": ["caption"],
-        "dataShape": "array of {url, caption?}",
+        "displayName": "Product/Image Carousel",
+        "description": "Cards with image or webpage preview, title, and description. Supports a direct image URL or falls back to an iframe of the product page URL. Best for products, startups, or visual content.",
+        "requiredFields": ["title"],
+        "optionalFields": ["url", "description", "image"],
+        "dataShape": "array of {title, url?, description?, image?}",
         "sizeHint": "large"
     },
     {
@@ -108,13 +108,54 @@ class OutputConsolidator:
         self,
         query: str,
         goal_outputs: Dict[str, Any],
-        hint_component: Optional[str] = None
+        hint_component: Optional[str] = None,
+        field_mapping: Optional[Dict[str, str]] = None
     ) -> ConsolidatedOutput:
+        # Deterministic fast path: skill declared both a target component and a field mapping
+        if hint_component and field_mapping is not None:
+            try:
+                return self._mapped_consolidate(goal_outputs, hint_component, field_mapping)
+            except Exception as e:
+                logger.warning(f"Mapped consolidation failed, falling back to LLM: {e}")
+
         try:
             return await self._llm_consolidate(query, goal_outputs, hint_component)
         except Exception as e:
             logger.error(f"LLM consolidation failed, falling back to heuristic: {e}")
             return self._heuristic_consolidate(query, goal_outputs)
+
+    def _mapped_consolidate(
+        self,
+        goal_outputs: Dict[str, Any],
+        component_type: str,
+        field_mapping: Dict[str, str]
+    ) -> ConsolidatedOutput:
+        """Deterministic consolidation using an explicit skill field mapping."""
+        all_rows: List[Dict[str, Any]] = []
+        for key, value in goal_outputs.items():
+            # Prefer raw rows stored by _create_observation (keyed with ._rows suffix)
+            if key.endswith("._rows") and isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        all_rows.append(item)
+            elif isinstance(value, dict) and "rows" in value:
+                all_rows.extend(value.get("rows", []))
+            elif isinstance(value, list) and not key.endswith(".count"):
+                for item in value:
+                    if isinstance(item, dict):
+                        all_rows.append(item)
+
+        mapped_rows = [self._apply_field_mapping(row, field_mapping) for row in all_rows]
+        return ConsolidatedOutput(
+            component_type=component_type,
+            component_data=mapped_rows,
+            summary=f"Showing {len(mapped_rows)} items"
+        )
+
+    @staticmethod
+    def _apply_field_mapping(row: Dict[str, Any], mapping: Dict[str, str]) -> Dict[str, Any]:
+        """Transform a single row using {component_field: skill_field} mapping."""
+        return {comp_field: row.get(skill_field, "") for comp_field, skill_field in mapping.items()}
 
     async def _llm_consolidate(
         self,
@@ -180,7 +221,16 @@ IMPORTANT: Return ONLY valid JSON, no markdown fences."""
     def _summarize_outputs(self, goal_outputs: Dict[str, Any]) -> str:
         parts = []
         for key, value in goal_outputs.items():
-            if isinstance(value, dict) and "rows" in value:
+            # Skip internal raw-rows keys — they are summarised via the ._rows entry
+            if key.endswith(".count"):
+                continue
+            if key.endswith("._rows") and isinstance(value, list):
+                parts.append(f"Output rows ({len(value)} items):")
+                if value:
+                    parts.append(f"  Sample row: {json.dumps(value[0], default=str)[:500]}")
+                    if len(value) > 1:
+                        parts.append(f"  ... and {len(value) - 1} more rows")
+            elif isinstance(value, dict) and "rows" in value:
                 rows = value["rows"]
                 parts.append(f"Output '{key}': {len(rows)} rows")
                 if rows:
@@ -192,7 +242,9 @@ IMPORTANT: Return ONLY valid JSON, no markdown fences."""
                 if value:
                     parts.append(f"  Sample: {json.dumps(value[0], default=str)[:500]}")
             elif isinstance(value, str):
-                parts.append(f"Output '{key}': {value[:500]}")
+                # Skip individual flattened field values — they're noise when ._rows is present
+                if "._rows" not in key and not any(k.endswith("._rows") for k in goal_outputs):
+                    parts.append(f"Output '{key}': {value[:500]}")
             else:
                 parts.append(f"Output '{key}': {json.dumps(value, default=str)[:500]}")
         return "\n".join(parts) if parts else "No outputs available"
@@ -203,10 +255,15 @@ IMPORTANT: Return ONLY valid JSON, no markdown fences."""
         goal_outputs: Dict[str, Any]
     ) -> ConsolidatedOutput:
         all_rows: List[Dict[str, Any]] = []
-        for value in goal_outputs.values():
-            if isinstance(value, dict) and "rows" in value:
+        for key, value in goal_outputs.items():
+            # Prefer raw rows stored by _create_observation (keyed with ._rows suffix)
+            if key.endswith("._rows") and isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        all_rows.append(item)
+            elif isinstance(value, dict) and "rows" in value:
                 all_rows.extend(value.get("rows", []))
-            elif isinstance(value, list):
+            elif isinstance(value, list) and not key.endswith(".count"):
                 for item in value:
                     if isinstance(item, dict):
                         all_rows.append(item)
@@ -220,9 +277,16 @@ IMPORTANT: Return ONLY valid JSON, no markdown fences."""
             if has_image and has_name:
                 carousel_data = []
                 for row in all_rows:
-                    url = row.get("image") or row.get("image_url") or row.get("photo") or row.get("url", "")
-                    caption = row.get("title") or row.get("name", "")
-                    carousel_data.append({"url": url, "caption": caption})
+                    image = row.get("image") or row.get("image_url") or row.get("photo") or ""
+                    title = row.get("title") or row.get("name", "")
+                    url = row.get("url", "")
+                    desc = row.get("description") or row.get("desc") or row.get("summary") or ""
+                    carousel_data.append({
+                        "title": title,
+                        "image": image,
+                        "url": url,
+                        "description": desc,
+                    })
                 return ConsolidatedOutput(
                     component_type="carousel",
                     component_data=carousel_data,

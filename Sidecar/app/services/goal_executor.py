@@ -213,42 +213,45 @@ class StepExecutor:
                         key = f"{self.goal_id}.Step-{step_num}-{row.index}.{field_name}"
                         context_updates[key] = str(value) if not isinstance(value, str) else value
         
-        # Create table DataPacket from RowSet results
-        table_rows = []
-        table_schema = {"index": {"type": "integer"}, "status": {"type": "string"}}
-        
-        # Collect field names
-        field_names = set()
+        # Collect clean result rows from successful fan-out items
+        result_rows = []
+        result_schema_fields = set()
         for row in result_row_set.rows:
             if row.status == RowStatus.OK and row.value and isinstance(row.value, DataPacket) and row.value.rows:
-                field_names.update(row.value.rows[0].keys())
-        
-        for field_name in sorted(field_names):
-            table_schema[field_name] = {"type": "string"}
-        
-        # Build table rows
-        for row in result_row_set.rows:
-            table_row = {"index": row.index, "status": row.status.value}
-            
-            if row.status == RowStatus.OK and row.value and isinstance(row.value, DataPacket) and row.value.rows:
-                for field_name, value in row.value.rows[0].items():
-                    table_row[field_name] = str(value) if not isinstance(value, str) else value
-            elif row.status == RowStatus.FAILED:
-                table_row["error"] = row.error or "Unknown error"
-                if "error" not in table_schema:
+                for r in row.value.rows:
+                    result_rows.append(r)
+                    result_schema_fields.update(r.keys())
+
+        # Store raw rows for the consolidator
+        context_updates[f"{self.goal_id}.Step-{step_num}._rows"] = result_rows
+
+        # Determine the view type from the skill (instead of hardcoding "table")
+        view_type = skill.output_type if skill.output_type != "text" else "table"
+
+        # Build DataPacket from collected result rows
+        if result_rows:
+            schema = {"type": "object", "properties": {f: {"type": "string"} for f in sorted(result_schema_fields)}}
+            result_packet = DataPacket(schema_def=schema, rows=result_rows)
+        else:
+            # Fallback: build table with status info if no successful rows
+            table_rows = []
+            table_schema = {"index": {"type": "integer"}, "status": {"type": "string"}}
+            for row in result_row_set.rows:
+                table_row = {"index": row.index, "status": row.status.value}
+                if row.status == RowStatus.FAILED:
+                    table_row["error"] = row.error or "Unknown error"
                     table_schema["error"] = {"type": "string"}
-            
-            table_rows.append(table_row)
-        
-        table_packet = DataPacket(
-            schema_def={"type": "object", "properties": table_schema},
-            rows=table_rows
-        )
-        
+                table_rows.append(table_row)
+            result_packet = DataPacket(
+                schema_def={"type": "object", "properties": table_schema},
+                rows=table_rows
+            )
+            view_type = "table"
+
         return ObservationResult(
             success=ok_count > 0,
-            view="table",
-            data=table_packet,
+            view=view_type,
+            data=result_packet,
             context_updates=context_updates,
             summary=f"FanOut: {ok_count}/{result_row_set.count} items processed successfully"
         )
@@ -628,6 +631,11 @@ class StepExecutor:
                 
                 # Also store count for reference
                 namespaced_updates[f"{self.goal_id}.Step-{step_num}.count"] = str(len(data_packet.rows))
+
+        # Store raw rows so the consolidator can reconstruct them (flattened values above
+        # are only useful for step chaining, not for full-row consolidation)
+        if data_packet.rows:
+            namespaced_updates[f"{self.goal_id}.Step-{step_num}._rows"] = data_packet.rows
         
         return ObservationResult(
             success=True,
@@ -1135,12 +1143,29 @@ class GoalExecutionLoop:
                         for key, value in goal.step_outputs.items():
                             # Keys are already goal-scoped (e.g., "G-0.Step-0-0.title")
                             all_goal_outputs[key] = value
-                    
+
+                    # Collect output_ui_component / output_field_mapping from executed skills
+                    hint_component: Optional[str] = None
+                    hint_field_mapping: Optional[dict] = None
+                    registry = get_registry()
+                    for goal in goal_plan.goals:
+                        if hint_component:
+                            break
+                        for step in goal.steps:
+                            skill_key = f"{step.plugin_id}.{step.skill_id}"
+                            skill = registry.get_skill(skill_key)
+                            if skill and skill.output_ui_component:
+                                hint_component = skill.output_ui_component
+                                hint_field_mapping = skill.output_field_mapping
+                                break
+
                     if all_goal_outputs:
                         consolidator = OutputConsolidator()
                         consolidated = await consolidator.consolidate(
                             query=query,
-                            goal_outputs=all_goal_outputs
+                            goal_outputs=all_goal_outputs,
+                            hint_component=hint_component,
+                            field_mapping=hint_field_mapping
                         )
                         consolidated_data = {
                             "component_type": consolidated.component_type,

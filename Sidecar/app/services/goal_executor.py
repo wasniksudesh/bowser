@@ -357,15 +357,27 @@ class StepExecutor:
                             if k.startswith(pattern) and k.endswith(f".{field}")]
             
             if matching_keys:
-                # Sort by row index
-                matching_keys.sort(key=lambda k: int(k.split("-")[2].split(".")[0]))
+                # Sort by row index — keys are like "G-0.Step-1-3.title"
+                # Extract row index from the step-row segment (e.g., "Step-1-3" → 3)
+                def _extract_row_index(k: str) -> int:
+                    # Find the "Step-N-R" segment and extract R
+                    for segment in k.split("."):
+                        if segment.startswith("Step-"):
+                            parts = segment.split("-")
+                            if len(parts) == 3:
+                                try:
+                                    return int(parts[2])
+                                except ValueError:
+                                    pass
+                    return 0
+                matching_keys.sort(key=_extract_row_index)
                 
                 logger.info(f"Found {len(matching_keys)} matching keys for field '{field}'")
                 
                 # Build RowSet from collected values
                 rows = []
                 for key in matching_keys:
-                    row_index = int(key.split("-")[2].split(".")[0])
+                    row_index = _extract_row_index(key)
                     value = context.step_outputs[key].value
                     
                     # Check if value is an array
@@ -601,18 +613,21 @@ class StepExecutor:
         
         if step and step.step_id.startswith("Step-"):
             step_num = int(step.step_id.split("-")[1])
-            namespace_prefix = f"{self.goal_id}.Step-{step_num}-0"
         else:
-            namespace_prefix = f"{self.goal_id}.{skill_id.split('.')[-1]}"
+            step_num = 0
         
-        # Extract fields from output_schema
+        # Store ALL rows with per-row indexing so foreach can iterate
         if skill.output_schema and "properties" in skill.output_schema:
+            field_names = list(skill.output_schema["properties"].keys())
             if data_packet.rows:
-                first_row = data_packet.rows[0]
-                for field_name in skill.output_schema["properties"].keys():
-                    if field_name in first_row:
-                        namespaced_key = f"{namespace_prefix}.{field_name}"
-                        namespaced_updates[namespaced_key] = first_row[field_name]
+                for row_idx, row in enumerate(data_packet.rows):
+                    row_prefix = f"{self.goal_id}.Step-{step_num}-{row_idx}"
+                    for field_name in field_names:
+                        if field_name in row:
+                            namespaced_updates[f"{row_prefix}.{field_name}"] = row[field_name]
+                
+                # Also store count for reference
+                namespaced_updates[f"{self.goal_id}.Step-{step_num}.count"] = str(len(data_packet.rows))
         
         return ObservationResult(
             success=True,
@@ -673,11 +688,50 @@ class GoalEvaluator:
     def _build_evaluation_prompt(self, goal: GoalModel, context: ContextArtifactModel) -> str:
         """Build evaluation prompt for goal"""
         
-        # Format step outputs
-        outputs_text = []
+        # Summarize step outputs: group by step, show counts + sample
+        import re
+        step_groups: Dict[str, List[str]] = {}
         for key, value in context.step_outputs.items():
-            if key.startswith(f"{goal.goal_id}."):
-                outputs_text.append(f"  {key}: {value.value[:200]}...")
+            if not key.startswith(f"{goal.goal_id}."):
+                continue
+            # Group by step prefix (e.g., "G-0.Step-0" from "G-0.Step-0-3.title")
+            match = re.match(rf'{re.escape(goal.goal_id)}\.Step-(\d+)', key)
+            if match:
+                step_key = f"Step-{match.group(1)}"
+                if step_key not in step_groups:
+                    step_groups[step_key] = []
+                step_groups[step_key].append(key)
+        
+        outputs_text = []
+        for step_key, keys in step_groups.items():
+            # Find count key
+            count_key = f"{goal.goal_id}.{step_key}.count"
+            count_val = context.step_outputs.get(count_key)
+            count = count_val.value if count_val else str(len([k for k in keys if re.search(r'-\d+\.', k)]))
+            
+            # Get unique field names
+            fields = set()
+            for k in keys:
+                parts = k.split(".")
+                if len(parts) >= 3 and "-" in parts[1] and parts[1].count("-") == 2:
+                    fields.add(parts[2])
+            
+            if fields:
+                outputs_text.append(f"  {step_key}: {count} rows with fields {sorted(fields)}")
+                # Show first row as sample
+                sample_parts = []
+                for field in sorted(fields):
+                    sample_key = f"{goal.goal_id}.{step_key}-0.{field}"
+                    if sample_key in context.step_outputs:
+                        sample_parts.append(f"{field}={context.step_outputs[sample_key].value[:80]}")
+                if sample_parts:
+                    outputs_text.append(f"    Sample: {', '.join(sample_parts[:3])}")
+            else:
+                for k in keys[:5]:
+                    outputs_text.append(f"  {k}: {context.step_outputs[k].value[:200]}")
+                if len(keys) > 5:
+                    outputs_text.append(f"  ... and {len(keys) - 5} more keys")
+        
         outputs_str = "\n".join(outputs_text) if outputs_text else "No outputs yet"
         
         return f"""You are evaluating whether a goal has been completed.
@@ -700,6 +754,8 @@ Return ONLY a valid JSON object with this structure:
 
 Guidelines:
 - completed: true if the goal objective is fully accomplished
+- If steps produced data rows successfully (e.g. "N rows with fields [...]"), the goal IS complete. Do not retry just because you only see a sample — the full data exists.
+- Lean towards "complete" when data has been fetched and processed. Retrying is expensive and should only happen if steps truly failed or produced zero useful output.
 - strategy: "complete" if done, "retry_steps" if more steps might help, "abort_goal" if impossible
 - suggested_next_steps: hint for what additional steps might help (if retry_steps)
 
@@ -1009,10 +1065,11 @@ class GoalExecutionLoop:
                         goal.retry_count += 1
                         logger.info(f"Goal {goal.goal_id} incomplete, retry {goal.retry_count}/{MAX_GOAL_RETRIES}")
                         
-                        # Create more steps
+                        # Create more steps (re-summarize context to include recent outputs)
                         failure_info = eval_result.reasoning
+                        updated_context_summary = self.step_planner._summarize_context(context)
                         new_steps, new_required_inputs = await self.step_planner.create_more_steps(
-                            goal, goal.steps, goal.step_outputs, failure_info, context_summary
+                            goal, goal.steps, goal.step_outputs, failure_info, updated_context_summary
                         )
                         
                         # Add new steps to goal
@@ -1068,17 +1125,53 @@ class GoalExecutionLoop:
             
             if final_eval.query_resolved:
                 logger.info("Query fully resolved")
+                
+                # Consolidate all goal outputs into a single UIComponent
+                consolidated_data = None
+                try:
+                    from app.services.output_consolidator import OutputConsolidator
+                    all_goal_outputs = {}
+                    for goal in goal_plan.goals:
+                        for key, value in goal.step_outputs.items():
+                            # Keys are already goal-scoped (e.g., "G-0.Step-0-0.title")
+                            all_goal_outputs[key] = value
+                    
+                    if all_goal_outputs:
+                        consolidator = OutputConsolidator()
+                        consolidated = await consolidator.consolidate(
+                            query=query,
+                            goal_outputs=all_goal_outputs
+                        )
+                        consolidated_data = {
+                            "component_type": consolidated.component_type,
+                            "component_data": consolidated.component_data,
+                            "summary": consolidated.summary
+                        }
+                except Exception as e:
+                    logger.warning(f"Output consolidation failed (non-fatal): {e}")
+                
+                complete_data = {"message": "Query resolved successfully"}
+                if consolidated_data:
+                    complete_data["consolidated_output"] = consolidated_data
+                
                 event_callback(GoalEvent(
                     event_type="complete",
-                    data={"message": "Query resolved successfully"},
+                    data=complete_data,
+                    goal_id=None,
+                    timestamp=datetime.now()
+                ))
+                return {"status": "complete", "final_evaluation": final_eval, "consolidated_output": consolidated_data}
+            else:
+                logger.warning(f"Query not fully resolved: {final_eval.reasoning}")
+                # All goals executed — emit complete even if evaluator is unsatisfied.
+                # The data is already produced; marking incomplete would leave the UI stuck.
+                event_callback(GoalEvent(
+                    event_type="complete",
+                    data={"message": "All goals executed", "partial": True},
                     goal_id=None,
                     timestamp=datetime.now()
                 ))
                 return {"status": "complete", "final_evaluation": final_eval}
-            else:
-                logger.warning(f"Query not fully resolved: {final_eval.reasoning}")
-                # Could implement plan extension here
-                return {"status": "incomplete", "final_evaluation": final_eval}
             
         except Exception as e:
             logger.error(f"Goal execution loop failed: {e}", exc_info=True)

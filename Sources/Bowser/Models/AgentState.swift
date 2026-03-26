@@ -474,6 +474,14 @@ final class AgentState {
             if let result = data["result"] as? [String: Any] {
                 session.lastEvaluation = result
             }
+            if let consolidated = data["consolidated_output"] as? [String: Any],
+               let componentType = consolidated["component_type"] as? String {
+                session.consolidatedOutput = ConsolidatedOutput(
+                    componentType: componentType,
+                    componentData: consolidated["component_data"],
+                    summary: consolidated["summary"] as? String ?? ""
+                )
+            }
             isLoading = false
             
         case "error":
@@ -584,10 +592,11 @@ final class AgentState {
                 return
             }
             
-            // Update goal status to executing
+            // Update goal status to executing and session to running
             if let goal = session.goals.first(where: { $0.goalId == goalId }) {
                 goal.status = .executing
             }
+            session.status = .running
 
             isLoading = false
         } catch {
@@ -1060,6 +1069,9 @@ final class AgentSession: Identifiable {
     var currentGoalIndex: Int = 0  // Which goal is currently active
     var goals: [GoalInfo] = []  // List of goals with their states
     var expandedGoalId: String?  // Which goal is currently expanded in UI
+    
+    // Consolidated output from OutputConsolidator (set on "complete" event)
+    var consolidatedOutput: ConsolidatedOutput?
 
     init(id: UUID = UUID(), query: String) {
         self.id = id
@@ -1454,4 +1466,15 @@ struct GoalStatusInfo {
     let status: String
     let retryCount: Int
     let stepsCount: Int
+}
+
+// =============================================================================
+// MARK: - Consolidated Output
+// =============================================================================
+
+/// Output from the backend OutputConsolidator, mapping agent results to a UIComponentType
+struct ConsolidatedOutput {
+    let componentType: String
+    let componentData: Any?
+    let summary: String
 }

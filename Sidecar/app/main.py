@@ -67,10 +67,16 @@ async def lifespan(app: FastAPI):
     # Auto-configure if API key is available
     await auto_configure_on_startup()
     
+    # Initialize widget services (scheduler, stores)
+    from app.routes.widget_routes import init_widget_services, shutdown_widget_services
+    init_widget_services()
+    logger.info("Widget services initialized (scheduler started)")
+    
     yield
     
     # Cleanup on shutdown
     logger.info("Shutting down AI services...")
+    shutdown_widget_services()
     if ai_agent:
         await ai_agent.cleanup()
     if mem0_service:
@@ -309,6 +315,10 @@ app.include_router(redactor_routes.router, prefix="/api/redactor", tags=["Redact
 # Register Agent Mode routes
 from app.routes import agent_routes
 app.include_router(agent_routes.router, prefix="/api/agent", tags=["Agent"])
+
+# Register Widget routes
+from app.routes import widget_routes
+app.include_router(widget_routes.router, prefix="/api/widgets", tags=["Widgets"])
 
 # Register OAuth routes
 from app.routes import oauth_routes

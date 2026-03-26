@@ -27,6 +27,13 @@ struct HomescreenView: View {
         ZStack(alignment: .bottom) {
             UnifiedBackdropView()
                 .ignoresSafeArea()
+            
+            // Widget layer (behind dock, above folders)
+            HomescreenWidgetLayer(
+                browserState: browserState,
+                widgetManager: browserState.widgetManager
+            )
+            .allowsHitTesting(true)
 
             HStack(spacing: 0) {
                 // Left sidebar: global history
@@ -157,7 +164,8 @@ struct HomescreenView: View {
                         },
                         onDuplicate: {
                             folderManager.copyFolder(folder)
-                        }
+                        },
+                        hasUnread: browserState.widgetManager.hasUnread(forFolder: folder.id)
                     )
                 }
 

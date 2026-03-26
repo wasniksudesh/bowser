@@ -69,11 +69,13 @@ from .github_plugin import get_github_plugin
 from .http_plugin import get_http_plugin
 from .text_analysis_plugin import get_text_analysis_plugin
 from .gmail_plugin import get_gmail_plugin
+from .hackernews_plugin import get_hackernews_plugin
 
 __all__ = [
     'discover_plugins',
     'get_github_plugin',
     'get_http_plugin',
     'get_text_analysis_plugin',
-    'get_gmail_plugin'
+    'get_gmail_plugin',
+    'get_hackernews_plugin',
 ]

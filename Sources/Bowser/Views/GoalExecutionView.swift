@@ -637,45 +637,48 @@ struct StepOutputView: View {
     }
     
     private func tableOutputView(_ tableData: TableArtifactData) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Table header
-            HStack(spacing: 8) {
-                ForEach(tableData.columns, id: \.key) { column in
-                    Text(column.label)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.3))
-            )
-            
-            // Table rows (limit to first 5)
-            ForEach(Array(tableData.rows.prefix(5).enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 8) {
-                    ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                        Text(cell)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .lineLimit(1)
+        let colWidth: CGFloat = 180
+        
+        return ScrollView([.horizontal, .vertical]) {
+            VStack(alignment: .leading, spacing: 0) {
+                // Table header
+                HStack(spacing: 0) {
+                    ForEach(tableData.columns, id: \.key) { column in
+                        Text(column.label)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: colWidth, alignment: .leading)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-            }
-            
-            if tableData.rows.count > 5 {
-                Text("... and \(tableData.rows.count - 5) more rows")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+                
+                Divider()
+                
+                // All table rows — no limit
+                ForEach(Array(tableData.rows.enumerated()), id: \.offset) { rowIdx, row in
+                    HStack(spacing: 0) {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            Text(cell)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.primary)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(width: colWidth, alignment: .leading)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                        }
+                    }
+                    .background(rowIdx % 2 == 0 ? Color.clear : Color(nsColor: .controlColor).opacity(0.05))
+                    
+                    if rowIdx < tableData.rows.count - 1 {
+                        Divider()
+                    }
+                }
             }
         }
+        .frame(maxHeight: 400)
     }
     
     private func listOutputView(_ listData: ListArtifactData) -> some View {

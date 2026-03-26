@@ -16,6 +16,7 @@ struct FolderIconView: View {
     let onSetColor: (Color) -> Void
     let onDelete: () -> Void
     var onDuplicate: (() -> Void)? = nil
+    var hasUnread: Bool = false
 
     @State private var isHovering = false
     @State private var isRenaming = false
@@ -38,6 +39,14 @@ struct FolderIconView: View {
                     .symbolRenderingMode(.hierarchical)
             }
             .frame(width: 52, height: 52)
+            .overlay(alignment: .topTrailing) {
+                if hasUnread {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 10, height: 10)
+                        .offset(x: 3, y: -3)
+                }
+            }
             .scaleEffect(isHovering ? 1.06 : 1.0)
             .shadow(
                 color: folder.color.opacity(isHovering ? 0.25 : 0.0),

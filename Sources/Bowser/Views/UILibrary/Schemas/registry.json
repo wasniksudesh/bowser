@@ -33,6 +33,30 @@
       "displayName": "Interactive Map",
       "category": "media",
       "description": "Interactive Google Maps panel for locations"
+    },
+    "table": {
+      "schemaFile": "table.schema.json",
+      "displayName": "Data Table",
+      "category": "data",
+      "description": "Sortable table with columns and rows for structured data"
+    },
+    "chart": {
+      "schemaFile": "chart.schema.json",
+      "displayName": "Chart",
+      "category": "data",
+      "description": "Bar, line, or pie chart for numeric data visualization"
+    },
+    "textBlock": {
+      "schemaFile": "textBlock.schema.json",
+      "displayName": "Text Block",
+      "category": "content",
+      "description": "Rich text display for summaries, descriptions, and code"
+    },
+    "list": {
+      "schemaFile": "list.schema.json",
+      "displayName": "List",
+      "category": "content",
+      "description": "Simple bullet list or key-value pairs"
     }
   }
 }

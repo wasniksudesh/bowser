@@ -63,6 +63,12 @@ final class BrowserState {
 
     /// Manages screenshot-style snapshot capture
     let snapshotService: SnapshotCaptureService
+    
+    /// Agent definition store for persisting agent configs
+    let agentDefinitionStore: AgentDefinitionStore
+    
+    /// Homescreen widget manager
+    let widgetManager: WidgetManager
 
     // MARK: - Tab State (Delegating to TabManager)
 
@@ -183,6 +189,10 @@ final class BrowserState {
         // Initialize selection monitor and snapshot service
         self.selectionMonitor = WebSelectionMonitor()
         self.snapshotService = SnapshotCaptureService()
+        
+        // Initialize agent definition store and widget manager
+        self.agentDefinitionStore = AgentDefinitionStore()
+        self.widgetManager = WidgetManager()
 
         // Set initial address bar text
         navigationState.addressBarText = "https://www.google.com"

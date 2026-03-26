@@ -279,8 +279,10 @@ Return ONLY a valid JSON array of goal objects with this structure:
 ]
 
 Guidelines:
-- Multiple goals can use the same plugin if they have different objectives
-- Use depends_on to specify goal dependencies (e.g., ["G-0"] means this goal depends on G-0 completing first)
+- Keep the number of goals MINIMAL. Combine related work into one goal when it uses the same plugin.
+- Do NOT split a single plugin's workflow across multiple goals. For example, "fetch items then describe each item" using the same plugin should be ONE goal — the step planner will handle the multi-step orchestration within that goal.
+- Only create separate goals when different plugins are needed, or when truly independent tasks exist.
+- Use depends_on when a goal needs output from a previous goal's plugin (e.g., ["G-0"] means this goal depends on G-0 completing first)
 - Keep goals focused and actionable
 - Order matters - place goals that produce data before goals that consume it
 - Do NOT create authentication goals - assume authentication is already handled
@@ -678,14 +680,24 @@ class StepPlannerAgent:
     
     def _build_step_prompt(self, goal: GoalModel, skills_text: str, context_summary: str) -> str:
         """Build prompt for step planning"""
+        has_previous_context = context_summary and context_summary != "No context available"
+        
+        reuse_block = ""
+        if has_previous_context:
+            reuse_block = """
+If any data listed above was produced by a PREVIOUS goal using the SAME plugin,
+you should reference it via cross-goal syntax (e.g. foreach source "G-0.Step-0-0")
+rather than re-running the same skill. Only re-fetch if the goal explicitly requires
+different parameters or a fresh query."""
+        
         return f"""You are a step planner. Create detailed steps to accomplish a goal using available skills.
 
 GOAL: {goal.description}
 PLUGIN: {goal.plugin_id}
 
 AVAILABLE CONTEXT FROM PREVIOUS GOALS:
-{context_summary if context_summary else "None - this is the first goal"}
-
+{context_summary if has_previous_context else "None - this is the first goal"}
+{reuse_block}
 AVAILABLE SKILLS:
 {skills_text}
 
@@ -703,6 +715,7 @@ Return ONLY a valid JSON array of step objects:
 
 Guidelines:
 - Order matters - place skills that produce outputs before skills that need those outputs
+- NEVER repeat the same skill_id more than once in the plan UNLESS it is used with a different directive (e.g. once plain, once with foreach, or once with fanin). A skill that already ran and produced output does not need to run again — downstream steps should reference its output.
 - Use foreach when you need to process each item separately (runs N times)
 - Use fanin when you want to aggregate/combine multiple results (runs once with combined input)
 - IMPORTANT: "fanin" is a DIRECTIVE, not a skill_id. Always use a real skill with the fanin directive
@@ -791,7 +804,8 @@ Return ONLY a valid JSON array of NEW step objects:
 Guidelines:
 - Reference existing steps if needed (Step-0, Step-1, etc.)
 - Focus on what's missing to complete the goal
-- Don't repeat successful steps
+- NEVER re-run a skill that already executed successfully. If fetchLaunches already ran, do NOT add another fetchLaunches step. Reference the existing output instead.
+- NEVER create one step per row — use foreach to iterate over all rows from a previous step in a single step definition.
 - IMPORTANT: "fanin" is a DIRECTIVE, not a skill_id. Always use a real skill with the fanin directive
 - When using fanin, reference the combined data as "{{{{ _fanin.field_name }}}}" in input_mappings
 
@@ -892,38 +906,54 @@ Return ONLY the raw JSON array, no markdown formatting, no explanations."""
     
     def _summarize_context(self, context: ContextArtifactModel) -> str:
         """
-        Serialize full context for prompt (no compaction to avoid data loss).
-        
-        Args:
-            context: Current context artifact
-        
-        Returns:
-            Full context serialization string
+        Serialize context for prompt with structured output descriptions.
+        For large outputs, shows schema + row count instead of full data to keep
+        the prompt focused while still informing the LLM what data is available.
         """
         lines = []
-        
-        # User values - include ALL without truncation
+
         if context.user_values:
             lines.append("User-provided fields:")
             for key, value in context.user_values.items():
-                # Handle both ContextValueModel and raw values
                 if hasattr(value, 'value'):
                     display_value = value.value
                 else:
                     display_value = str(value)
                 lines.append(f"  {key}: {display_value}")
-        
-        # Step outputs - include ALL outputs without truncation or filtering
+
         if context.step_outputs:
-            lines.append("Available outputs from previous goals:")
+            lines.append("")
+            lines.append("AVAILABLE DATA from previous goals (use cross-goal refs to reuse):")
             for key, value in context.step_outputs.items():
-                # Handle both ContextValueModel and raw values
                 if hasattr(value, 'value'):
-                    display_value = value.value
+                    raw = value.value
                 else:
-                    display_value = str(value) if not isinstance(value, str) else value
-                lines.append(f"  {key}: {display_value}")
-        
+                    raw = str(value) if not isinstance(value, str) else value
+
+                # Try to parse as JSON to give a structured summary
+                try:
+                    parsed = json.loads(raw) if isinstance(raw, str) else raw
+                    if isinstance(parsed, dict) and "rows" in parsed:
+                        rows = parsed["rows"]
+                        row_count = len(rows)
+                        sample_keys = list(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
+                        lines.append(f"  {key}: DataPacket with {row_count} rows, fields={sample_keys}")
+                        if rows and row_count > 0:
+                            sample = {k: v for k, v in list(rows[0].items())[:4]}
+                            lines.append(f"    Sample row: {json.dumps(sample, default=str)}")
+                        lines.append(f"    -> Reference as \"{key}\" in foreach source or input_mappings")
+                    elif isinstance(parsed, list) and len(parsed) > 0:
+                        lines.append(f"  {key}: List with {len(parsed)} items")
+                        if isinstance(parsed[0], dict):
+                            lines.append(f"    Fields: {list(parsed[0].keys())}")
+                        lines.append(f"    -> Reference as \"{key}\" in foreach source or input_mappings")
+                    else:
+                        display = raw[:300] if isinstance(raw, str) and len(raw) > 300 else raw
+                        lines.append(f"  {key}: {display}")
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    display = raw[:300] if isinstance(raw, str) and len(raw) > 300 else raw
+                    lines.append(f"  {key}: {display}")
+
         return "\n".join(lines) if lines else "No context available"
 
 

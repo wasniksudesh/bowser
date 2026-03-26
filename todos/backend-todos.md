@@ -24,3 +24,5 @@
 1. Snapshot, Downladed Files -> Not implemented
 2. "Files" button should show all Notes, Snapshots, DownloadedFiles. 
 3. Implement fly-cut.
+4. Agent <-> Widget integration (Skill should write Carousel and widget should display it) (plan => scheduled_agents_and_widgets)
+

@@ -99,6 +99,15 @@ struct AgentModeMainView: View {
                     GoalExecutionView(session: session, agentState: agentState)
                 }
                 
+                // Consolidated Output (shown when agent completes)
+                if session.status == .completed, let output = session.consolidatedOutput {
+                    AgentCompletionSection(
+                        output: output,
+                        session: session,
+                        browserState: browserState
+                    )
+                }
+                
                 // Bottom padding for chat bar
                 Spacer()
                     .frame(height: 80)
@@ -206,6 +215,180 @@ struct AgentModeMainView: View {
     }
 }
 
+
+// =============================================================================
+// MARK: - Agent Completion Section
+// =============================================================================
+
+/// Shows the consolidated output and action buttons (Schedule, Export as Widget)
+struct AgentCompletionSection: View {
+    
+    let output: ConsolidatedOutput
+    let session: AgentSession
+    @Bindable var browserState: BrowserState
+    @State private var showScheduleSheet = false
+    @State private var exportStatus: String?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Section header
+            HStack {
+                Image(systemName: "sparkles.rectangle.stack")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.green)
+                
+                Text("Agent Output")
+                    .font(.system(size: 15, weight: .semibold))
+                
+                Spacer()
+                
+                Text(output.componentType)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.blue)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.blue.opacity(0.1))
+                    )
+            }
+            
+            // Rendered output
+            AgentOutputView(
+                componentType: output.componentType,
+                componentData: output.componentData,
+                summary: output.summary,
+                compact: false,
+                browserState: browserState
+            )
+            
+            // Action buttons
+            HStack(spacing: 12) {
+                // Schedule button
+                Button(action: { showScheduleSheet = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.arrow.circlepath")
+                        Text("Schedule Daily")
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.blue)
+                    )
+                }
+                .buttonStyle(.plain)
+                
+                // Export as Widget button
+                Button(action: { exportAsWidget() }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "rectangle.on.rectangle")
+                        Text("Export as Widget")
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.purple)
+                    )
+                }
+                .buttonStyle(.plain)
+                
+                Spacer()
+                
+                if let status = exportStatus {
+                    Text(status)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.green.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal, 20)
+    }
+    
+    private func exportAsWidget() {
+        Task {
+            exportStatus = "Creating widget..."
+            do {
+                // Build the request to create a scheduled widget
+                let url = URL(string: "http://localhost:8765/api/widgets/create")!
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                
+                // Build goal_plan from session execution plan
+                var goalPlanDict: [String: Any] = ["plan_id": session.id.uuidString, "goals": []]
+                if let plan = session.executionPlan {
+                    let goals = plan.steps.map { step -> [String: Any] in
+                        [
+                            "goal_id": step.id.uuidString,
+                            "description": step.description ?? "",
+                            "plugin_id": step.pluginId ?? "",
+                            "status": "completed"
+                        ]
+                    }
+                    goalPlanDict["goals"] = goals
+                }
+                
+                let body: [String: Any] = [
+                    "definition_id": session.id.uuidString,
+                    "query": session.query,
+                    "goal_plan": goalPlanDict,
+                    "output_component_type": output.componentType,
+                    "folder_id": browserState.currentFolderId?.uuidString ?? "",
+                    "frequency": "daily"
+                ]
+                
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse,
+                      httpResponse.statusCode == 200 else {
+                    exportStatus = "Failed to create widget"
+                    return
+                }
+                
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let widgetId = json?["widget_id"] as? String ?? ""
+                
+                // Add to homescreen widget manager
+                let widgetInstance = HomescreenWidgetInstance(
+                    widgetId: widgetId,
+                    agentDefinitionId: session.id,
+                    folderId: browserState.currentFolderId,
+                    query: session.query,
+                    outputComponentType: output.componentType
+                )
+                browserState.widgetManager.addWidget(widgetInstance)
+                
+                // Cache the current output data
+                if let componentData = output.componentData {
+                    browserState.widgetManager.updateCachedData(widgetId: widgetId, data: componentData)
+                }
+                
+                withAnimation {
+                    exportStatus = "Widget created! (\(widgetId))"
+                }
+            } catch {
+                exportStatus = "Error: \(error.localizedDescription)"
+            }
+        }
+    }
+}
 
 // =============================================================================
 // MARK: - Goal Plan Approval View

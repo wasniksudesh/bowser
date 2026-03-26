@@ -39,15 +39,18 @@ struct HomescreenView: View {
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
 
-                // Narrow folder column
+                // Folder column — three 80pt columns + 2×12pt gaps + 2×16pt padding = 296pt
                 folderColumn
-                    .frame(minWidth: 160, idealWidth: 200, maxWidth: 240)
+                    .frame(width: 296)
 
                 // Widget grid: takes remaining space
                 if !widgetManager.orderedVisibleWidgets.isEmpty {
                     widgetGridArea
                 }
+
+                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
             // Dim scrim when search results are showing
             if searchState.showResults {
@@ -128,12 +131,13 @@ struct HomescreenView: View {
     }
 
     // MARK: - Folder Column
-    // Two fixed columns (~80pt each) fits the 72pt folder icons with spacing.
+    // Three fixed columns (~80pt each) fits the 72pt folder icons with spacing.
 
     private var folderColumn: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(
                 columns: [
+                    GridItem(.fixed(80), spacing: 12),
                     GridItem(.fixed(80), spacing: 12),
                     GridItem(.fixed(80), spacing: 12)
                 ],

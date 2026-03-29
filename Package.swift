@@ -33,6 +33,7 @@ let package = Package(
             resources: [
                 .process("Assets.xcassets"),
                 .process("Views/UILibrary/Schemas"),
+                .process("Config"),
             ],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")

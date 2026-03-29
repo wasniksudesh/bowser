@@ -46,7 +46,11 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
-            licenseState = await LicenseService.shared.initialCheckState()
+            if FeatureFlagService.shared.flags.licenseCheckEnabled {
+                licenseState = await LicenseService.shared.initialCheckState()
+            } else {
+                licenseState = .verified
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .licenseRevoked)) { _ in
             withAnimation(.easeInOut(duration: 0.3)) {

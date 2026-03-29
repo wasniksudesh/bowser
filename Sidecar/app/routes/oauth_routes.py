@@ -1,6 +1,21 @@
 """
 OAuth Routes for Gmail Plugin
-Handles OAuth 2.0 flow for Gmail authentication
+Handles OAuth 2.0 flow for Gmail authentication via a WKWebView popup sheet.
+
+Two completion paths (belt-and-suspenders):
+
+  Fast path (WKWebView intercepts redirect before it loads):
+    1. POST /gmail/start  -> {auth_url, state}
+    2. WKWebView decidePolicyFor intercepts redirect URL
+    3. Frontend extracts code+state, calls POST /gmail/exchange
+    4. Backend exchanges code for token, stores on session
+
+  Fallback path (redirect actually loads):
+    1. POST /gmail/start  -> {auth_url, state}
+    2. Google redirects to GET /gmail/callback?code=...&state=...
+    3. Backend exchanges code for token, stores on session
+    4. Returns HTML that calls window.webkit.messageHandlers.oauthComplete
+    5. WKWebView's WKScriptMessageHandler signals completion to Swift
 """
 
 import os
@@ -20,279 +35,249 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# In-memory storage for OAuth state mappings and status
-# state -> {"session_id": str, "auth_id": str, "status": "pending"|"success"|"failed", "error": Optional[str]}
+# state -> {"session_id": str, "auth_id": str, "flow": Flow}
 _oauth_states: Dict[str, Dict[str, Any]] = {}
 
-# Gmail OAuth scopes
-GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+# state -> True once _exchange_and_store completes successfully.
+# Polled by GET /gmail/status/{state} from the Swift frontend.
+_oauth_completed: Dict[str, bool] = {}
+
+GMAIL_SCOPES = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
+]
+
+# For "installed" app types Google accepts http://localhost:<any-port>.
+# Point it at our own server so the GET callback works as a fallback.
+REDIRECT_URI = "http://localhost:8765/api/oauth/gmail/callback"
+
+_CREDENTIALS_DEFAULT = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "secrets", "credentials.json")
+)
 
 
 # =============================================================================
-# Request/Response Models
+# Request / Response Models
 # =============================================================================
 
 class OAuthStartRequest(BaseModel):
-    """Request to start OAuth flow"""
     session_id: str
-    auth_id: str = "gmail_auth"  # Default to gmail_auth
-
+    auth_id: str = "gmail_auth"
 
 class OAuthStartResponse(BaseModel):
-    """Response with OAuth URL"""
     auth_url: str
     state: str
 
+class OAuthExchangeRequest(BaseModel):
+    code: str
+    state: str
 
-class OAuthStatusResponse(BaseModel):
-    """Response with OAuth status"""
-    status: str  # "pending", "success", "failed"
+class OAuthExchangeResponse(BaseModel):
+    status: str
     error: Optional[str] = None
 
 
 # =============================================================================
-# Helper Functions
+# Helpers
 # =============================================================================
 
-def get_client_config() -> Dict[str, Any]:
-    """Load OAuth client configuration from OAUTH_CLIENT env var"""
-    oauth_client_path = os.getenv("OAUTH_CLIENT")
-    if not oauth_client_path:
-        raise ValueError("OAUTH_CLIENT environment variable not set")
-    
-    if not os.path.exists(oauth_client_path):
-        raise ValueError(f"OAuth client file not found: {oauth_client_path}")
-    
-    with open(oauth_client_path, 'r') as f:
-        config = json.load(f)
-    
-    return config
-
-
-def _error_html(message: str) -> str:
-    """Generate error HTML page"""
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Authentication Failed</title>
-        <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-                   display: flex; justify-content: center; align-items: center; height: 100vh; 
-                   margin: 0; background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%); }}
-            .container {{ text-align: center; background: white; padding: 40px 60px; 
-                         border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); max-width: 500px; }}
-            .error-icon {{ font-size: 64px; margin-bottom: 20px; }}
-            h1 {{ color: #333; margin-bottom: 10px; }}
-            p {{ color: #666; }}
-            .error-detail {{ background: #f8f8f8; padding: 12px; border-radius: 8px; 
-                            margin-top: 16px; font-family: monospace; font-size: 12px; color: #c0392b; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="error-icon">❌</div>
-            <h1>Authentication Failed</h1>
-            <p>Something went wrong during authentication.</p>
-            <div class="error-detail">{message}</div>
-            <p style="margin-top: 20px;">Please close this window and try again.</p>
-        </div>
-    </body>
-    </html>
+def _get_client_config() -> Dict[str, Any]:
     """
+    Load OAuth client config.
+    Resolution: OAUTH_CLIENT env var -> secrets/credentials.json
+    """
+    path = os.getenv("OAUTH_CLIENT") or _CREDENTIALS_DEFAULT
+    if not os.path.exists(path):
+        raise ValueError(
+            f"OAuth credentials file not found at '{path}'. "
+            "Place credentials.json in the secrets/ directory or set OAUTH_CLIENT."
+        )
+    with open(path, "r") as f:
+        return json.load(f)
+
+
+def _exchange_and_store(code: str, state: str) -> str:
+    """
+    Exchange an authorization code for tokens and store the access token
+    on the agent session.  Returns the session_id on success.
+
+    Shared by both POST /exchange (fast path) and GET /callback (fallback).
+
+    We reuse the original Flow object from _oauth_states so that the PKCE
+    code_verifier generated during authorization_url() is present for fetch_token().
+    """
+    state_data = _oauth_states.pop(state, None)
+    if not state_data:
+        raise ValueError("Invalid or expired state token")
+
+    session_id = state_data["session_id"]
+    auth_id = state_data["auth_id"]
+    flow = state_data["flow"]  # reuse — preserves code_verifier
+
+    flow.fetch_token(code=code)
+
+    access_token = flow.credentials.token
+    logger.info("Obtained tokens for session %s", session_id)
+
+    session_store = get_session_store()
+    session = session_store.get_session(session_id)
+    if not session:
+        raise ValueError(f"Session not found: {session_id}")
+
+    context_artifact = session.get("context_artifact")
+    if not context_artifact:
+        raise ValueError(f"Context artifact not found for session {session_id}")
+
+    if not hasattr(context_artifact, "auth"):
+        context_artifact.auth = {}
+
+    context_artifact.auth[auth_id] = AuthEntryModel(
+        strategy_used="oauth",
+        value=access_token,
+        valid=True,
+    )
+    session_store.update_session(session_id, {"context_artifact": context_artifact})
+
+    # Mark as completed so the Swift poller can detect it
+    _oauth_completed[state] = True
+
+    logger.info("OAuth exchange completed for session %s", session_id)
+    return session_id
 
 
 # =============================================================================
-# OAuth Endpoints
+# Endpoints
 # =============================================================================
 
 @router.post("/gmail/start", response_model=OAuthStartResponse)
 async def start_gmail_oauth(request: OAuthStartRequest):
-    """
-    Initiate Gmail OAuth flow
-    
-    1. Generate state token
-    2. Create authorization URL
-    3. Store state -> session_id mapping
-    4. Return auth URL for frontend to open in browser
-    """
+    """Return the Google authorization URL for the frontend to open."""
     try:
-        # Load client configuration
-        client_config = get_client_config()
-        
-        # Generate unique state token
+        client_config = _get_client_config()
         state = str(uuid.uuid4())
-        
-        # Create OAuth flow
+
         flow = Flow.from_client_config(
             client_config,
             scopes=GMAIL_SCOPES,
-            redirect_uri="http://localhost:8765/api/oauth/gmail/callback"
+            redirect_uri=REDIRECT_URI,
         )
-        
-        # Generate authorization URL
         auth_url, _ = flow.authorization_url(
-            access_type='offline',
-            include_granted_scopes='true',
+            access_type="offline",
+            include_granted_scopes="true",
             state=state,
-            prompt='consent'  # Force consent to get refresh token
+            prompt="consent",
         )
-        
-        # Store state mapping
+
+        # Store the flow object — its code_verifier must survive until fetch_token()
         _oauth_states[state] = {
             "session_id": request.session_id,
             "auth_id": request.auth_id,
-            "status": "pending",
-            "error": None
+            "flow": flow,
         }
-        
-        logger.info(f"Started OAuth flow for session {request.session_id}, state: {state}")
-        
-        return OAuthStartResponse(
-            auth_url=auth_url,
-            state=state
+
+        logger.info(
+            "Started OAuth flow for session %s, state: %s",
+            request.session_id, state,
         )
-        
-    except Exception as e:
-        logger.error(f"Error starting OAuth flow: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return OAuthStartResponse(auth_url=auth_url, state=state)
+
+    except Exception as exc:
+        logger.error("Error starting OAuth flow: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/gmail/status/{state}")
+async def get_oauth_status(state: str):
+    """
+    Polled by the Swift OAuthSheet every second to detect completion.
+    Returns {"completed": true} once _exchange_and_store has run successfully.
+    Cleans up after being read as completed so memory doesn't grow unbounded.
+    """
+    completed = _oauth_completed.pop(state, False)
+    pending = state in _oauth_states
+    return {"completed": completed, "pending": pending}
+
+
+@router.post("/gmail/exchange", response_model=OAuthExchangeResponse)
+async def exchange_gmail_code(request: OAuthExchangeRequest):
+    """
+    Fast path: WKWebView intercepted the redirect, extracted code+state,
+    and POSTs them here for server-side token exchange.
+    """
+    try:
+        _exchange_and_store(request.code, request.state)
+        return OAuthExchangeResponse(status="success")
+    except Exception as exc:
+        logger.error("Error exchanging OAuth code: %s", exc)
+        return OAuthExchangeResponse(status="failed", error=str(exc))
 
 
 @router.get("/gmail/callback")
 async def gmail_oauth_callback(
     code: str = Query(..., description="Authorization code from Google"),
-    state: str = Query(..., description="State token for CSRF protection")
+    state: str = Query(..., description="State token for CSRF protection"),
 ):
     """
-    OAuth callback endpoint (called by Google after user authorizes)
-    
-    1. Verify state token
-    2. Exchange authorization code for access/refresh tokens
-    3. Update session context with tokens
-    4. Mark OAuth flow as complete
+    Fallback path: Google actually redirected the WKWebView here.
+
+    Exchanges the code server-side, then returns a small HTML page whose
+    JavaScript calls window.webkit.messageHandlers.oauthComplete to signal
+    completion back to the Swift WKWebView.
     """
     try:
-        # Verify state exists
-        if state not in _oauth_states:
-            logger.error(f"Invalid state token: {state}")
-            return HTMLResponse(content=_error_html("Invalid state token"), status_code=400)
-        
-        state_data = _oauth_states[state]
-        session_id = state_data["session_id"]
-        auth_id = state_data["auth_id"]
-        
-        logger.info(f"Processing OAuth callback for session {session_id}")
-        
-        # Load client configuration
-        client_config = get_client_config()
-        
-        # Create OAuth flow
-        flow = Flow.from_client_config(
-            client_config,
-            scopes=GMAIL_SCOPES,
-            redirect_uri="http://localhost:8765/api/oauth/gmail/callback",
-            state=state
-        )
-        
-        # Exchange authorization code for tokens
-        flow.fetch_token(code=code)
-        
-        # Get credentials
-        credentials = flow.credentials
-        access_token = credentials.token
-        refresh_token = credentials.refresh_token
-        
-        logger.info(f"Successfully obtained tokens for session {session_id}")
-        
-        # Update session context with tokens
-        session_store = get_session_store()
-        session = session_store.get_session(session_id)
-        
-        if not session:
-            logger.error(f"Session not found: {session_id}")
-            state_data["status"] = "failed"
-            state_data["error"] = "Session not found"
-            return HTMLResponse(content=_error_html("Session not found"), status_code=404)
-        
-        # Get or create context artifact
-        context_artifact = session.get("context_artifact")
-        if not context_artifact:
-            logger.error(f"Context artifact not found for session {session_id}")
-            state_data["status"] = "failed"
-            state_data["error"] = "Context artifact not found"
-            return HTMLResponse(content=_error_html("Context artifact not found"), status_code=404)
-        
-        # Update auth entry with tokens
-        if not hasattr(context_artifact, 'auth'):
-            context_artifact.auth = {}
-        
-        context_artifact.auth[auth_id] = AuthEntryModel(
-            strategy_used="oauth",
-            value=access_token,
-            valid=True
-        )
-        
-        # Update session
-        session_store.update_session(session_id, {
-            "context_artifact": context_artifact
-        })
-        
-        # Mark OAuth flow as successful
-        state_data["status"] = "success"
-        
-        logger.info(f"OAuth flow completed successfully for session {session_id}")
-        
-        # Return success HTML page for the user
-        return HTMLResponse(content="""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Authentication Successful</title>
-            <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-                       display: flex; justify-content: center; align-items: center; height: 100vh; 
-                       margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-                .container { text-align: center; background: white; padding: 40px 60px; 
-                             border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-                .checkmark { font-size: 64px; margin-bottom: 20px; }
-                h1 { color: #333; margin-bottom: 10px; }
-                p { color: #666; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="checkmark">✅</div>
-                <h1>Authentication Successful!</h1>
-                <p>You can close this window and return to Bowser.</p>
-            </div>
-        </body>
-        </html>
-        """)
-        
-    except Exception as e:
-        logger.error(f"Error in OAuth callback: {e}")
-        if state in _oauth_states:
-            _oauth_states[state]["status"] = "failed"
-            _oauth_states[state]["error"] = str(e)
-        return HTMLResponse(content=_error_html(str(e)), status_code=500)
+        _exchange_and_store(code, state)
+        logger.info("GET callback exchanged code successfully (fallback path)")
 
+        return HTMLResponse(content="""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Authenticated</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif;
+         display: flex; justify-content: center; align-items: center;
+         height: 100vh; margin: 0;
+         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+  .box { text-align: center; background: white; padding: 40px 60px;
+         border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.2); }
+</style></head><body>
+<div class="box">
+  <div style="font-size:64px">&#9989;</div>
+  <h2>Authentication Successful</h2>
+  <p id="msg">Closing&hellip;</p>
+</div>
+<script>
+  try {
+    window.webkit.messageHandlers.oauthComplete.postMessage({status:"success"});
+  } catch(e) {
+    document.getElementById("msg").textContent =
+      "You can close this window and return to Bowser.";
+  }
+</script>
+</body></html>""")
 
-@router.get("/gmail/status/{state}", response_model=OAuthStatusResponse)
-async def get_oauth_status(state: str):
-    """
-    Check OAuth flow status (polled by frontend)
-    
-    Returns:
-        - "pending": OAuth flow in progress
-        - "success": OAuth completed, tokens stored in session
-        - "failed": OAuth failed with error
-    """
-    if state not in _oauth_states:
-        raise HTTPException(status_code=404, detail="State not found")
-    
-    state_data = _oauth_states[state]
-    
-    return OAuthStatusResponse(
-        status=state_data["status"],
-        error=state_data.get("error")
-    )
+    except Exception as exc:
+        logger.error("Error in GET callback: %s", exc)
+        return HTMLResponse(content=f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Error</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif;
+         display: flex; justify-content: center; align-items: center;
+         height: 100vh; margin: 0;
+         background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%); }}
+  .box {{ text-align: center; background: white; padding: 40px 60px;
+         border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.2);
+         max-width: 500px; }}
+  .err {{ background: #f8f8f8; padding: 12px; border-radius: 8px;
+          margin-top: 16px; font-family: monospace; font-size: 12px;
+          color: #c0392b; }}
+</style></head><body>
+<div class="box">
+  <div style="font-size:64px">&#10060;</div>
+  <h2>Authentication Failed</h2>
+  <div class="err">{exc}</div>
+  <p style="margin-top:20px">Please close this window and try again.</p>
+</div>
+<script>
+  try {{
+    window.webkit.messageHandlers.oauthComplete.postMessage({{status:"failed",error:"{exc}"}});
+  }} catch(e) {{}}
+</script>
+</body></html>""", status_code=500)

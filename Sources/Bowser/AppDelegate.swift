@@ -81,8 +81,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await checkSidecarHealth()
         }
 
-        // Start daily license re-verification
-        startDailyLicenseCheck()
+        // Start daily license re-verification (skipped when license check is disabled via feature flags)
+        if FeatureFlagService.shared.flags.licenseCheckEnabled {
+            startDailyLicenseCheck()
+        }
 
         print("[Bowser] Application ready")
     }

@@ -248,9 +248,9 @@ class GoalPlannerAgent:
             if plugin.auth_requirements:
                 auth_types = [req.auth_id for req in plugin.auth_requirements]
                 auth_desc = f" (requires: {', '.join(auth_types)})"
-            
+
             lines.append(
-                f"{i}. {plugin.plugin_id} - {plugin.name}\n"
+                f"{i}. plugin_id=\"{plugin.plugin_id}\" ({plugin.name})\n"
                 f"   Description: {plugin.description}{auth_desc}\n"
             )
         return "\n".join(lines)
@@ -273,12 +273,13 @@ Return ONLY a valid JSON array of goal objects with this structure:
 [
   {{
     "description": "Detailed objective for this goal",
-    "plugin_id": "plugin_id",
+    "plugin_id": "<exact plugin_id string from the list above, e.g. 'gmail' not 'Gmail Plugin'>",
     "depends_on": ["G-0"] or []
   }}
 ]
 
 Guidelines:
+- CRITICAL: "plugin_id" must be the exact plugin_id="..." string from the list above. Do NOT use the plugin name or any variation.
 - Keep the number of goals MINIMAL. Combine related work into one goal when it uses the same plugin.
 - Do NOT split a single plugin's workflow across multiple goals. For example, "fetch items then describe each item" using the same plugin should be ONE goal — the step planner will handle the multi-step orchestration within that goal.
 - Only create separate goals when different plugins are needed, or when truly independent tasks exist.
@@ -324,12 +325,13 @@ Return ONLY a valid JSON array of goal objects with this structure:
 [
   {{
     "description": "Detailed objective for this goal",
-    "plugin_id": "plugin_id",
+    "plugin_id": "<exact plugin_id string from the list above, e.g. 'gmail' not 'Gmail Plugin'>",
     "depends_on": ["G-0"] or []
   }}
 ]
 
 Guidelines:
+- CRITICAL: "plugin_id" must be the exact plugin_id="..." string from the list above. Do NOT use the plugin name or any variation.
 - Address the user's feedback
 - Keep goals focused and actionable
 - Use depends_on to specify goal dependencies
@@ -372,12 +374,13 @@ Return ONLY a valid JSON array of NEW goal objects:
 [
   {{
     "description": "Detailed objective for this goal",
-    "plugin_id": "plugin_id",
+    "plugin_id": "<exact plugin_id string from the list above, e.g. 'gmail' not 'Gmail Plugin'>",
     "depends_on": ["G-0", "G-1"] or []
   }}
 ]
 
 Guidelines:
+- CRITICAL: "plugin_id" must be the exact plugin_id="..." string from the list above. Do NOT use the plugin name or any variation.
 - These goals will be appended to the existing plan
 - Reference existing goals in depends_on if needed (G-0, G-1, etc.)
 - Focus on what's missing to complete the user's query

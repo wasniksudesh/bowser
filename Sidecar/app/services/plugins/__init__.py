@@ -20,44 +20,36 @@ def discover_plugins() -> List[Callable[[], Plugin]]:
     """
     plugin_getters = []
     current_dir = os.path.dirname(__file__)
-    
-    # Iterate through all Python files in the plugins directory
+
     for filename in os.listdir(current_dir):
-        # Skip __init__.py and non-Python files
-        if filename == '__init__.py' or not filename.endswith('.py'):
-            continue
-        
-        # Skip directories (like gmail_plugin/)
         filepath = os.path.join(current_dir, filename)
+
         if os.path.isdir(filepath):
-            # Check if it's a package with __init__.py
+            # Sub-package plugin (e.g. gmail_plugin/)
+            if filename.startswith('_'):
+                continue
             init_file = os.path.join(filepath, '__init__.py')
-            if os.path.exists(init_file):
-                module_name = filename
-                try:
-                    module = importlib.import_module(f'.{module_name}', package='app.services.plugins')
-                    # Look for get_*_plugin functions
-                    for name, obj in inspect.getmembers(module, inspect.isfunction):
-                        if name.startswith('get_') and name.endswith('_plugin'):
-                            plugin_getters.append(obj)
-                except Exception as e:
-                    print(f"Warning: Failed to import plugin package {module_name}: {e}")
-            continue
-        
-        # Extract module name (remove .py extension)
-        module_name = filename[:-3]
-        
-        try:
-            # Import the module
-            module = importlib.import_module(f'.{module_name}', package='app.services.plugins')
-            
-            # Look for functions matching get_*_plugin pattern
-            for name, obj in inspect.getmembers(module, inspect.isfunction):
-                if name.startswith('get_') and name.endswith('_plugin'):
-                    plugin_getters.append(obj)
-        except Exception as e:
-            print(f"Warning: Failed to import plugin module {module_name}: {e}")
-    
+            if not os.path.exists(init_file):
+                continue
+            try:
+                module = importlib.import_module(f'.{filename}', package='app.services.plugins')
+                for name, obj in inspect.getmembers(module, inspect.isfunction):
+                    if name.startswith('get_') and name.endswith('_plugin'):
+                        plugin_getters.append(obj)
+            except Exception as e:
+                print(f"Warning: Failed to import plugin package {filename}: {e}")
+
+        elif filename.endswith('.py') and filename != '__init__.py' and not filename.startswith('_'):
+            # Single-file plugin (e.g. hackernews_plugin.py)
+            module_name = filename[:-3]
+            try:
+                module = importlib.import_module(f'.{module_name}', package='app.services.plugins')
+                for name, obj in inspect.getmembers(module, inspect.isfunction):
+                    if name.startswith('get_') and name.endswith('_plugin'):
+                        plugin_getters.append(obj)
+            except Exception as e:
+                print(f"Warning: Failed to import plugin module {module_name}: {e}")
+
     return plugin_getters
 
 

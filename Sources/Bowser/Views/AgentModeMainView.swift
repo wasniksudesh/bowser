@@ -311,11 +311,15 @@ struct WorkflowCanvasWithRunButton: View {
 /// Auth tokens and required inputs bar shown above the workflow canvas
 /// when a goal is awaiting start and needs user-provided values.
 struct WorkflowInputsSection: View {
-    
+
     @Bindable var goal: GoalInfo
     let session: AgentSession
     let agentState: AgentState
     @State private var inputValues: [String: String] = [:]
+
+    // OAuth popup sheet state
+    @State private var showOAuthSheet = false
+    @State private var oauthAuthId: String = ""
     
     private var hasAuthFields: Bool {
         guard let auth = session.contextArtifact?.auth else { return false }
@@ -363,15 +367,16 @@ struct WorkflowInputsSection: View {
                     Text("Authentication")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
-                    
+
                     ForEach(Array(auth.keys.sorted()), id: \.self) { authId in
                         if let authEntry = auth[authId] {
                             HStack(spacing: 10) {
+                                // Label + connected badge
                                 HStack(spacing: 4) {
                                     Text(authId.replacingOccurrences(of: "_", with: " ").capitalized)
                                         .font(.system(size: 12, weight: .medium))
                                         .foregroundStyle(.primary)
-                                    
+
                                     if !authEntry.value.isEmpty {
                                         Image(systemName: "checkmark.circle.fill")
                                             .font(.system(size: 11))
@@ -379,23 +384,78 @@ struct WorkflowInputsSection: View {
                                     }
                                 }
                                 .frame(width: 140, alignment: .leading)
-                                
-                                SecureField("Enter \(authEntry.strategyUsed)", text: Binding(
-                                    get: { session.contextArtifact?.auth[authId]?.value ?? "" },
-                                    set: { newValue in
-                                        session.contextArtifact?.auth[authId]?.value = newValue
-                                        session.contextArtifact?.auth[authId]?.valid = !newValue.isEmpty
+
+                                if authEntry.strategyUsed == "oauth" {
+                                    // OAuth entries get a "Sign in with Google" button
+                                    if authEntry.value.isEmpty {
+                                        Button {
+                                            print("[Oauth Frontend] Sign in tapped authId=\(authId)")
+                                            oauthAuthId = authId
+                                            showOAuthSheet = true
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "globe")
+                                                    .font(.system(size: 12))
+                                                Text("Sign in with Google")
+                                                    .font(.system(size: 12, weight: .medium))
+                                            }
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 7)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 6)
+                                                    .fill(Color(red: 0.26, green: 0.52, blue: 0.96))
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                    } else {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "checkmark.seal.fill")
+                                                .font(.system(size: 13))
+                                                .foregroundStyle(.green)
+                                            Text("Connected")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(.secondary)
+                                            Button("Re-authenticate") {
+                                                print("[Oauth Frontend] Re-authenticate tapped authId=\(authId)")
+                                                oauthAuthId = authId
+                                                showOAuthSheet = true
+                                            }
+                                            .font(.system(size: 11))
+                                            .buttonStyle(.plain)
+                                            .foregroundStyle(.blue)
+                                        }
                                     }
-                                ))
-                                .textFieldStyle(.plain)
-                                .font(.system(size: 12))
-                                .padding(8)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color(nsColor: .textBackgroundColor))
-                                )
+                                } else {
+                                    // Non-OAuth entries keep the original SecureField
+                                    SecureField("Enter \(authEntry.strategyUsed)", text: Binding(
+                                        get: { session.contextArtifact?.auth[authId]?.value ?? "" },
+                                        set: { newValue in
+                                            session.contextArtifact?.auth[authId]?.value = newValue
+                                            session.contextArtifact?.auth[authId]?.valid = !newValue.isEmpty
+                                        }
+                                    ))
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 12))
+                                    .padding(8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(Color(nsColor: .textBackgroundColor))
+                                    )
+                                }
                             }
                         }
+                    }
+                }
+                .sheet(isPresented: $showOAuthSheet) {
+                    OAuthSheet(
+                        sessionId: session.id.uuidString,
+                        authId: oauthAuthId
+                    ) { completedAuthId, _ in
+                        // Mark auth as filled; the real token lives on the backend session
+                        session.contextArtifact?.auth[completedAuthId]?.value = "oauth_token_stored"
+                        session.contextArtifact?.auth[completedAuthId]?.valid = true
+                        print("[Oauth Frontend] OAuth onComplete")
                     }
                 }
             }

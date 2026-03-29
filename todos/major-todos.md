@@ -8,3 +8,8 @@ Webmcp standardizes browser <-> website elicitation. Rather than scanning the we
 2. Password Manager (Vault)
 
 ### DLP Story 
+1. Full DLP control policies (MVP POC)
+
+
+### Action Replayyy
+1. User can select on webpage and teach the app on what browser-automation to do. 

@@ -26,14 +26,14 @@ final class TabDragItemProvider: NSItemProvider {
         // 1. Custom tab ID type (preferred)
         registerDataRepresentation(forTypeIdentifier: UTType.bowserTabId.identifier, visibility: .all) { completion in
             let data = tabId.uuidString.data(using: .utf8) ?? Data()
-            completion(data, nil)
+            Task { @MainActor in completion(data, nil) }
             return nil
         }
         
         // 2. Plain text as fallback
         registerDataRepresentation(forTypeIdentifier: UTType.plainText.identifier, visibility: .all) { completion in
             let data = tabId.uuidString.data(using: .utf8) ?? Data()
-            completion(data, nil)
+            Task { @MainActor in completion(data, nil) }
             return nil
         }
     }

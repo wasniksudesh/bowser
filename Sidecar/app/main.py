@@ -124,7 +124,7 @@ async def auto_configure_on_startup():
     try:
         # Check for environment variables first
         provider = os.getenv("AI_PROVIDER")
-        api_key = os.getenv("AI_API_KEY")
+        api_key = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY")
         model = os.getenv("AI_MODEL")
         
         if api_key and provider:
@@ -145,9 +145,29 @@ async def auto_configure_on_startup():
                     model=model
                 )
             
+            # Wire transcription service if OpenAI
+            if provider.lower() == "openai":
+                try:
+                    from openai import AsyncOpenAI
+                    from app.services.transcription_service import set_openai_client
+                    set_openai_client(AsyncOpenAI(api_key=api_key))
+                    logger.info("[Auto-Configure] Transcription service wired with OpenAI client")
+                except Exception as te:
+                    logger.warning(f"[Auto-Configure] Could not wire transcription client: {te}")
+            
             logger.info(f"[Auto-Configure] Successfully configured all services to {provider}")
         else:
-            logger.info("[Auto-Configure] No API credentials found in environment, waiting for manual configuration")
+            # Try OPENAI_API_KEY directly for transcription even without full AI config
+            openai_key = os.getenv("OPENAI_API_KEY")
+            if openai_key:
+                try:
+                    from openai import AsyncOpenAI
+                    from app.services.transcription_service import set_openai_client
+                    set_openai_client(AsyncOpenAI(api_key=openai_key))
+                    logger.info("[Auto-Configure] Transcription service wired from OPENAI_API_KEY")
+                except Exception as te:
+                    logger.warning(f"[Auto-Configure] Could not wire transcription client: {te}")
+            logger.info("[Auto-Configure] No full AI credentials found, waiting for manual configuration")
     except Exception as e:
         logger.warning(f"[Auto-Configure] Failed to auto-configure on startup: {e}")
 
@@ -282,13 +302,27 @@ async def configure_services(request: ConfigureRequest):
                 api_key=request.api_key,
                 model=request.model
             )
-            
+
+        # Wire transcription service for OpenAI-compatible providers
+        transcription_status = "skipped"
+        if request.provider in ("openai",) and request.api_key:
+            try:
+                from openai import AsyncOpenAI
+                from app.services.transcription_service import set_openai_client
+                set_openai_client(AsyncOpenAI(api_key=request.api_key))
+                transcription_status = "reconfigured"
+                logger.info("[Configure] Transcription service wired with OpenAI client")
+            except Exception as te:
+                transcription_status = f"failed: {te}"
+                logger.warning(f"[Configure] Could not wire transcription client: {te}")
+
         return {
             "success": True, 
             "message": f"Successfully reconfigured all services to {request.provider}",
             "services": {
                 "ai_agent": "reconfigured",
-                "mem0": "reconfigured"
+                "mem0": "reconfigured",
+                "transcription": transcription_status
             }
         }
     except Exception as e:
@@ -323,6 +357,14 @@ app.include_router(widget_routes.router, prefix="/api/widgets", tags=["Widgets"]
 # Register OAuth routes
 from app.routes import oauth_routes
 app.include_router(oauth_routes.router, prefix="/api/oauth", tags=["OAuth"])
+
+# Register Transcription routes (meeting recorder + voice-to-text)
+from app.routes import transcribe_routes
+app.include_router(transcribe_routes.router, prefix="/api/transcribe", tags=["Transcribe"])
+
+# Register Meeting Summary routes
+from app.routes import meeting_summary_routes
+app.include_router(meeting_summary_routes.router, prefix="/api/ai/meeting-summary", tags=["Meeting Summary"])
 
 @app.get("/")
 async def root():

@@ -10,14 +10,19 @@ import Foundation
 
 struct FeatureFlags: Codable, Sendable {
     /// When false, license verification is skipped and the app boots directly.
-    /// Set to true before shipping a release build.
     let licenseCheckEnabled: Bool
 
+    /// When true, the recording panel slides in over the browser while recording.
+    /// When false, no panel is shown — recording still works and the note is saved
+    /// and opened after stopping.
+    let recordingPanelEnabled: Bool
+
     enum CodingKeys: String, CodingKey {
-        case licenseCheckEnabled = "license_check_enabled"
+        case licenseCheckEnabled  = "license_check_enabled"
+        case recordingPanelEnabled = "recording_panel_enabled"
     }
 
-    static let defaultFlags = FeatureFlags(licenseCheckEnabled: true)
+    static let defaultFlags = FeatureFlags(licenseCheckEnabled: true, recordingPanelEnabled: false)
 }
 
 // =============================================================================
@@ -31,8 +36,11 @@ final class FeatureFlagService: @unchecked Sendable {
     let flags: FeatureFlags
 
     private init() {
+        // Bundle.module is the SPM-generated accessor for this target's resources.
+        // Bundle.main does not contain the resources bundle, so using it causes
+        // a silent fallback to defaultFlags (recordingPanelEnabled: false).
         guard
-            let url = Bundle.main.url(forResource: "feature_flags", withExtension: "json"),
+            let url = Bundle.module.url(forResource: "feature_flags", withExtension: "json"),
             let data = try? Data(contentsOf: url),
             let decoded = try? JSONDecoder().decode(FeatureFlags.self, from: data)
         else {
@@ -41,6 +49,6 @@ final class FeatureFlagService: @unchecked Sendable {
             return
         }
         self.flags = decoded
-        print("[FeatureFlags] Loaded — licenseCheckEnabled: \(decoded.licenseCheckEnabled)")
+        print("[FeatureFlags] Loaded — licenseCheckEnabled: \(decoded.licenseCheckEnabled), recordingPanelEnabled: \(decoded.recordingPanelEnabled)")
     }
 }

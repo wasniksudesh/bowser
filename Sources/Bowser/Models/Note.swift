@@ -17,6 +17,8 @@ struct Note: Identifiable, Codable {
     let createdAt: Date
     var updatedAt: Date
     var isTimeline: Bool
+    /// Non-nil when this note was generated from a meeting recording.
+    var meetingMetadata: MeetingMetadata?
 
     init(
         id: UUID = UUID(),
@@ -24,7 +26,8 @@ struct Note: Identifiable, Codable {
         contentRTFD: Data = Data(),
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
-        isTimeline: Bool = false
+        isTimeline: Bool = false,
+        meetingMetadata: MeetingMetadata? = nil
     ) {
         self.id = id
         self.title = title
@@ -32,12 +35,13 @@ struct Note: Identifiable, Codable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isTimeline = isTimeline
+        self.meetingMetadata = meetingMetadata
     }
 
     // Custom Codable to handle backward compatibility with notes saved before
-    // the isTimeline field existed. Old JSON files simply won't have the key.
+    // the isTimeline / meetingMetadata fields existed.
     enum CodingKeys: String, CodingKey {
-        case id, title, contentRTFD, createdAt, updatedAt, isTimeline
+        case id, title, contentRTFD, createdAt, updatedAt, isTimeline, meetingMetadata
     }
 
     init(from decoder: Decoder) throws {
@@ -48,6 +52,7 @@ struct Note: Identifiable, Codable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         isTimeline = try container.decodeIfPresent(Bool.self, forKey: .isTimeline) ?? false
+        meetingMetadata = try container.decodeIfPresent(MeetingMetadata.self, forKey: .meetingMetadata)
     }
 
     /// Deterministic UUID for a folder's timeline note, derived from the folder ID.

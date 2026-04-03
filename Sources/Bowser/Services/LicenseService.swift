@@ -175,7 +175,8 @@ final class LicenseService {
         guard let key = loadLicenseKey() else { return false }
 
         do {
-            _ = try await verifyLicense(key: key)
+            //TODO-License
+            // _ = try await verifyLicense(key: key)
             return true
         } catch is LicenseError {
             return isWithinGracePeriod()
@@ -186,18 +187,20 @@ final class LicenseService {
 
     /// Determine initial state on startup without blocking.
     func initialCheckState() async -> LicenseCheckState {
-        guard let key = loadLicenseKey() else {
-            return .needsLicense
-        }
+        // guard let key = loadLicenseKey() else {
+        //     return .needsLicense
+        // }
 
         do {
-            _ = try await verifyLicense(key: key)
+            //TODO-License-Enable
+            // _ = try await verifyLicense(key: key)
             return .verified
         } catch {
             if isWithinGracePeriod() {
                 return .verified
             }
-            return .needsLicense
+            // return .needsLicense
+            return .verified
         }
     }
 

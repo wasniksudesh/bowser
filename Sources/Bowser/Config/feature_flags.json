@@ -1,3 +1,4 @@
 {
-  "license_check_enabled": false
+  "license_check_enabled": false,
+  "recording_panel_enabled": true
 }

@@ -27,4 +27,4 @@
 3. Implement fly-cut.
 4. Agent <-> Widget integration (Skill should write Carousel and widget should display it) (plan => scheduled_agents_and_widgets)
 5. Agent input file support: allow user to upload a PDF (or other file) as input to the agent workflow. Backend should accept file upload via multipart form, extract content, and pass it as context to the execution pipeline.
-
+6. //TODO-License-Enable enable license back

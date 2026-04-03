@@ -84,17 +84,22 @@ struct PlanModeView: View {
 
             // Intent input field
             VStack(alignment: .leading, spacing: 8) {
-                TextField(
-                    "Enter your intent...", text: $browserState.planState.intent, axis: .vertical
-                )
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .padding(12)
-                .background(Color(nsColor: .textBackgroundColor))
-                .cornerRadius(8)
-                .lineLimit(3...6)
-                .onSubmit {
-                    planState.submitIntent()
+                ZStack(alignment: .topTrailing) {
+                    TextField(
+                        "Enter your intent...", text: $browserState.planState.intent, axis: .vertical
+                    )
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .padding(12)
+                    .background(Color(nsColor: .textBackgroundColor))
+                    .cornerRadius(8)
+                    .lineLimit(3...6)
+                    .onSubmit {
+                        planState.submitIntent()
+                    }
+
+                    VoiceInputButton(text: $browserState.planState.intent)
+                        .padding(8)
                 }
 
                 // Error message

@@ -125,6 +125,7 @@ struct HomescreenBottomBar: View {
                     let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !query.isEmpty { onSearch(query) }
                 }
+            VoiceInputButton(text: $searchText)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)

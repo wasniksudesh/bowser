@@ -70,6 +70,9 @@ final class BrowserState {
     /// Homescreen widget manager
     let widgetManager: WidgetManager
 
+    /// Meeting recording and live transcription service
+    let meetingRecorderService: MeetingRecorderService
+
     // MARK: - Tab State (Delegating to TabManager)
 
     /// List of all open tabs (delegated to TabManager)
@@ -194,12 +197,16 @@ final class BrowserState {
         self.agentDefinitionStore = AgentDefinitionStore()
         self.widgetManager = WidgetManager()
 
+        // Initialize meeting recorder service (singleton, attach after init)
+        self.meetingRecorderService = MeetingRecorderService.shared
+
         // Set initial address bar text
         navigationState.addressBarText = "https://www.google.com"
 
         // Attach services that need a back-reference to self
         selectionMonitor.attach(to: self)
         snapshotService.attach(to: self)
+        meetingRecorderService.attach(to: self)
 
         // Set callbacks after self is fully initialized
         tabManager.onTabClosed = { tabId in

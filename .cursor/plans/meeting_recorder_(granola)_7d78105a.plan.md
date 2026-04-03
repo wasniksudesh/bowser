@@ -4,37 +4,37 @@ overview: Build a Granola-style meeting recorder (CEF tab audio -> Whisper -> li
 todos:
   - id: cef-audio-handler
     content: "Add CefAudioHandler to C++ shim: implement OnAudioStreamStarted/Packet/Stopped in SimpleClient, add C API functions in cef_shim.h, add callback registration"
-    status: pending
+    status: completed
   - id: swift-audio-bridge
     content: Create CEFAudioBridge.swift to wrap C audio callbacks into Swift, convert PCM data, dispatch to MainActor
-    status: pending
+    status: completed
   - id: meeting-recorder-service
     content: "Create MeetingRecorderService.swift: recording state, 5-second audio chunking, WAV encoding, HTTP calls to Sidecar, transcript segment management"
-    status: pending
+    status: completed
   - id: transcript-model
     content: Create TranscriptSegment model and wire MeetingRecorderService into BrowserState
-    status: pending
+    status: completed
   - id: sidecar-transcribe-endpoint
     content: "Create transcription_service.py and transcribe_routes.py in Sidecar: POST /api/transcribe using OpenAI Whisper API"
-    status: pending
+    status: completed
   - id: transcript-sidebar-ui
     content: "Create TranscriptSidebarView.swift: live transcript display, speaker labels, auto-scroll, pause/stop buttons"
-    status: pending
+    status: completed
   - id: integrate-sidebar
     content: Modify FloatingWebCanvasView to show transcript sidebar when recording; add Record tool to ArcSidebarView tools grid
-    status: pending
+    status: completed
   - id: save-as-note
     content: "Implement stop flow: assemble transcript into RTFD Note, save via NotePersistence, open in tab"
-    status: pending
+    status: completed
   - id: voice-input-service
     content: "Create VoiceInputService.swift: microphone capture via AVAudioEngine, 2-second chunking, WAV encoding, Sidecar transcription, progressive text output"
-    status: pending
+    status: completed
   - id: voice-input-button
     content: "Create VoiceInputButton.swift: reusable SwiftUI mic button component with Binding<String>, animated recording state, press-and-hold or toggle mode"
-    status: pending
+    status: completed
   - id: voice-input-integration
     content: "Add VoiceInputButton to priority text inputs: CommandBarView, AgentChatBarView, ChatWindowView, HomescreenBottomBar, PlanModeView, LeafExecutionView"
-    status: pending
+    status: completed
 isProject: false
 ---
 

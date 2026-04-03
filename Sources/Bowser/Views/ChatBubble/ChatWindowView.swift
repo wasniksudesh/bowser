@@ -176,6 +176,8 @@ struct ChatWindowView: View {
                 .focused($isInputFocused)
                 .onSubmit { sendMessage() }
 
+            VoiceInputButton(text: $inputText)
+
             Button(action: sendMessage) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 20))

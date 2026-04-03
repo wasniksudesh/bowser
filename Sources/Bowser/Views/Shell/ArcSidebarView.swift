@@ -191,6 +191,59 @@ struct ArcSidebarView: View {
         .ignoresSafeArea(.container, edges: .top)
         // Inject the layout config into the environment for child views
         .trafficLightLayoutConfig(layoutConfig)
+        // Template pickers are anchored here (top-level) so they survive
+        // the tools panel collapsing/disappearing from the view hierarchy.
+        .sheet(isPresented: $showTemplatePickerForNote) {
+            TemplatePickerView(
+                onSelect: { template in
+                    let tab = browserState.createNoteTab()
+                    if let folderId = browserState.currentFolderId, let noteId = tab.noteId {
+                        let attrStr = NSAttributedString(
+                            string: template.starterMarkdown,
+                            attributes: [.font: NSFont.systemFont(ofSize: 13)]
+                        )
+                        let rtfd = (try? attrStr.data(
+                            from: NSRange(location: 0, length: attrStr.length),
+                            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+                        )) ?? Data()
+                        var note = NotePersistence.shared.loadNote(id: noteId, forFolder: folderId)
+                            ?? Note(id: noteId)
+                        note.title = template.title
+                        note.contentRTFD = rtfd
+                        note.updatedAt = Date()
+                        NotePersistence.shared.saveNote(note, forFolder: folderId)
+                        browserState.tabManager.updateTab(id: tab.id, title: template.title)
+                    }
+                },
+                onSkip: {
+                    browserState.createNoteTab()
+                }
+            )
+        }
+        .sheet(isPresented: $showTemplatePickerForRecording) {
+            TemplatePickerView(
+                onSelect: { template in
+                    NSLog("[RecordStart] ① sheet onSelect fired — template='%@'", template.title)
+                    browserState.meetingRecorderService.startRecording(template: template)
+                    NSLog("[RecordStart] ① sheet onSelect returned from startRecording")
+                },
+                onSkip: {
+                    NSLog("[RecordStart] ① sheet onSkip fired (no template)")
+                    browserState.meetingRecorderService.startRecording()
+                    NSLog("[RecordStart] ① sheet onSkip returned from startRecording")
+                }
+            )
+        }
+        .alert("Screen Recording Permission Required", isPresented: $showScreenRecordingPermissionAlert) {
+            Button("Open System Settings") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Bowser needs Screen Recording permission to capture system audio for meeting transcription. Enable it in System Settings → Privacy & Security → Screen Recording, then restart Bowser.")
+        }
     }
 
     // MARK: - Present Command Bar
@@ -573,6 +626,10 @@ struct ArcSidebarView: View {
 
     // MARK: - Tools Grid
 
+    @State private var showTemplatePickerForRecording = false
+    @State private var showTemplatePickerForNote = false
+    @State private var showScreenRecordingPermissionAlert = false
+
     private var toolsGrid: some View {
         let columns = [
             GridItem(.flexible(), spacing: 6),
@@ -590,21 +647,75 @@ struct ArcSidebarView: View {
                     browserState.openNoteTab(noteId: timelineId, title: "Timeline")
                 }
             }
-            toolGridItem(icon: "note.text", label: "New Note") {
-                browserState.createNoteTab()
+            // New Note — shows template picker first
+            toolGridItem(icon: "note.text.badge.plus", label: "New Note") {
+                showTemplatePickerForNote = true
             }
+
+            // Meeting recorder — waveform icon when recording, template picker on start
+            recordToolButton
         }
     }
 
-    private func toolGridItem(icon: String, label: String, action: @escaping () -> Void) -> some View {
+    private var recordToolButton: some View {
+        let isRecording = browserState.meetingRecorderService.isRecording
+        let isPaused = browserState.meetingRecorderService.isPaused
+
+        return Button {
+            if isRecording {
+                NSLog("[RecordStart] ⓪ record button tapped — stopping recording")
+                browserState.meetingRecorderService.stopRecording()
+            } else if SystemAudioCaptureService.shared.permissionDenied {
+                NSLog("[RecordStart] ⓪ record button tapped — screen recording permission denied")
+                showScreenRecordingPermissionAlert = true
+            } else {
+                NSLog("[RecordStart] ⓪ record button tapped — showing template picker")
+                showTemplatePickerForRecording = true
+                NSLog("[RecordStart] ⓪ showTemplatePickerForRecording = true")
+            }
+        } label: {
+            VStack(spacing: 4) {
+                if isRecording {
+                    WaveformBarsView(
+                        isAnimating: true,
+                        isPaused: isPaused,
+                        color: isPaused ? .orange : .red
+                    )
+                    .frame(width: 24, height: 14)
+                } else {
+                    Image(systemName: "record.circle")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                Text(isRecording ? (isPaused ? "Paused" : "Recording") : "Record")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(isRecording ? Color.red.opacity(0.8) : Color.secondary.opacity(0.6))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isRecording ? Color.red.opacity(0.06) : Color.primary.opacity(0.04))
+        )
+    }
+
+    private func toolGridItem(
+        icon: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondary)
                 Text(label)
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.secondary.opacity(0.6))
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)

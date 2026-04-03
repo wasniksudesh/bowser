@@ -274,6 +274,10 @@ struct CommandBarView: View {
                 }
             }
 
+            // Voice dictation button
+            VoiceInputButton(text: $searchText)
+                .padding(.trailing, 2)
+
             // Clear button (when text is present)
             if !searchText.isEmpty || activePlugin != nil {
                 Button {

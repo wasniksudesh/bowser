@@ -38,7 +38,11 @@ struct AgentChatBarView: View {
                 .onSubmit {
                     submitQuery()
                 }
-            
+
+            // Voice dictation
+            VoiceInputButton(text: $inputText)
+                .padding(.leading, -4)
+
             // Send button
             Button(action: submitQuery) {
                 Image(systemName: "arrow.up.circle.fill")

@@ -124,6 +124,7 @@ async def get_ai_status():
 async def configure_ai_agent(request: AIConfigureRequest):
     """
     Reconfigure the AI agent with a new provider and API key.
+    Also wires the OpenAI client into the transcription service when provider is openai.
     """
     try:
         from app.services.ai_agent import reconfigure_ai_agent
@@ -132,6 +133,17 @@ async def configure_ai_agent(request: AIConfigureRequest):
             api_key=request.api_key,
             model=request.model
         )
+
+        # Forward OpenAI client to transcription service for Whisper access
+        if request.provider.lower() == "openai":
+            try:
+                from openai import AsyncOpenAI
+                from app.services.transcription_service import set_openai_client
+                set_openai_client(AsyncOpenAI(api_key=request.api_key))
+                logger.info("[Configure] Transcription service wired with OpenAI client")
+            except Exception as te:
+                logger.warning(f"[Configure] Could not wire transcription client: {te}")
+
         return {"success": True, "message": f"Successfully reconfigured to {request.provider}"}
     except HTTPException:
         raise

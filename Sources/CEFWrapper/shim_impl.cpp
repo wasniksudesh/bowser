@@ -22,6 +22,7 @@
 #include "include/wrapper/cef_helpers.h"
 #include "include/wrapper/cef_library_loader.h"
 
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <stdio.h>
@@ -124,6 +125,54 @@ public:
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
     fprintf(stderr, "[CEF] Browser closed: %d\n", browser->GetIdentifier());
     browser_ = nullptr;
+  }
+
+  // Never allow CEF to create a separate popup/window browser. Normal links and
+  // target=_blank load in this tab; middle-click (NEW_BACKGROUND_TAB) and
+  // shift+click (NEW_WINDOW) open as a child tab via Swift.
+  bool OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                     int popup_id, const CefString &target_url,
+                     const CefString &target_frame_name,
+                     WindowOpenDisposition target_disposition, bool user_gesture,
+                     const CefPopupFeatures &popupFeatures,
+                     CefWindowInfo &windowInfo, CefRefPtr<CefClient> &client,
+                     CefBrowserSettings &settings,
+                     CefRefPtr<CefDictionaryValue> &extra_info,
+                     bool *no_javascript_access) override {
+    (void)frame;
+    (void)popup_id;
+    (void)target_frame_name;
+    (void)user_gesture;
+    (void)popupFeatures;
+    (void)windowInfo;
+    (void)client;
+    (void)settings;
+    (void)extra_info;
+    (void)no_javascript_access;
+
+    std::string url = target_url.ToString();
+    fprintf(stderr, "[CEF] OnBeforePopup: url=%s disposition=%d\n", url.c_str(),
+            static_cast<int>(target_disposition));
+
+    if (target_disposition == CEF_WOD_NEW_PICTURE_IN_PICTURE) {
+      return false;
+    }
+
+    if (target_disposition == CEF_WOD_NEW_BACKGROUND_TAB ||
+        target_disposition == CEF_WOD_NEW_WINDOW) {
+      if (!url.empty()) {
+        InvokeOpenLinkAsChildTabCallback(url);
+      }
+      return true;
+    }
+
+    if (browser && !url.empty()) {
+      CefRefPtr<CefFrame> main = browser->GetMainFrame();
+      if (main) {
+        main->LoadURL(target_url);
+      }
+    }
+    return true;
   }
 
   // =========================================================================
@@ -370,6 +419,47 @@ public:
     // Return true to cancel navigation (Swift will handle it)
     // Return false to allow normal navigation
     return (allow == 0);
+  }
+
+  bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                        const CefString &target_url,
+                        WindowOpenDisposition target_disposition,
+                        bool user_gesture) override {
+    (void)frame;
+    (void)user_gesture;
+
+    std::string url = target_url.ToString();
+    fprintf(stderr, "[CEF] OnOpenURLFromTab: url=%s disposition=%d\n",
+            url.c_str(), static_cast<int>(target_disposition));
+
+    if (url.empty()) {
+      return false;
+    }
+
+    // Allow same-tab navigations to proceed normally through OnBeforeBrowse.
+    if (target_disposition == CEF_WOD_CURRENT_TAB ||
+        target_disposition == CEF_WOD_SINGLETON_TAB) {
+      return false;
+    }
+
+    // Middle-click (NEW_BACKGROUND_TAB) and shift+click (NEW_WINDOW) open as
+    // a child tab. Everything else (e.g. ctrl/cmd+click = NEW_FOREGROUND_TAB)
+    // loads in the current tab rather than opening a new browser.
+    if (target_disposition == CEF_WOD_NEW_BACKGROUND_TAB ||
+        target_disposition == CEF_WOD_NEW_WINDOW) {
+      InvokeOpenLinkAsChildTabCallback(url);
+      return true;
+    }
+
+    // Popup dispositions are handled by OnBeforePopup; cancel here to avoid
+    // double-handling and load the URL in the current frame instead.
+    if (browser && !url.empty()) {
+      CefRefPtr<CefFrame> main = browser->GetMainFrame();
+      if (main) {
+        main->LoadURL(target_url);
+      }
+    }
+    return true;
   }
 
 private:

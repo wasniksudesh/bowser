@@ -87,53 +87,76 @@ struct FloatingWebCanvasView: View {
         
         // Check if active tab has stack mode enabled
         let isStackMode = browserState.activeTab?.stackModeEnabled ?? false
-        
-        // VS Code-style split editor with drag-and-drop support, or stacked canvas
-        Group {
-            if isAgentMode {
-                // Show agent mode UI when agent mode is active
-                AgentModeMainView(browserState: browserState)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if isGenerativeUIMode {
-                // Show generative UI when a leaf node is selected
-                GenerativeUIView(planState: browserState.planState, browserState: browserState)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let activeTab = browserState.activeTab {
-                if activeTab.tabType == .note, let noteId = activeTab.noteId {
-                    NoteEditorView(noteId: noteId, browserState: browserState)
-                        .id(noteId)
+
+        // Check if meeting recorder is active (shows transcript sidebar)
+        let isRecording = browserState.meetingRecorderService.isRecording
+        let _ = NSLog("[RecordStart] ③ FloatingWebCanvasView body — isRecording=%d", isRecording ? 1 : 0)
+
+        // VS Code-style split editor with drag-and-drop support, or stacked canvas.
+        // The recording panel is overlaid (ZStack) so the CEF NSView is never
+        // resized — resizing it while audio is playing crashes CEF's internal
+        // audio capture pipeline.
+        ZStack(alignment: .trailing) {
+            Group {
+                if isAgentMode {
+                    AgentModeMainView(browserState: browserState)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ZStack {
-                        if isStackMode {
-                            StackedCanvasView(browserState: browserState, tabId: activeTab.id)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else {
-                            SplitCanvasView(browserState: browserState, isFullScreen: isFullScreen)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if isGenerativeUIMode {
+                    GenerativeUIView(planState: browserState.planState, browserState: browserState)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let activeTab = browserState.activeTab {
+                    if activeTab.tabType == .note, let noteId = activeTab.noteId {
+                        NoteEditorView(noteId: noteId, browserState: browserState)
+                            .id(noteId)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ZStack {
+                            if isStackMode {
+                                StackedCanvasView(browserState: browserState, tabId: activeTab.id)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else {
+                                SplitCanvasView(browserState: browserState, isFullScreen: isFullScreen)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+
+                            if isStackMode {
+                                BottomPageDock(browserState: browserState, tabId: activeTab.id)
+                            }
+
+                            ChatBubbleOverlay(
+                                chatState: activeTab.chatBubbleState,
+                                tabURL: activeTab.url
+                            )
+                            .zIndex(900)
+
+                            selectionPopupOverlay
+                                .zIndex(950)
+
+                            copiedToastOverlay
+                                .zIndex(960)
                         }
-
-                        if isStackMode {
-                            BottomPageDock(browserState: browserState, tabId: activeTab.id)
-                        }
-
-                        ChatBubbleOverlay(
-                            chatState: activeTab.chatBubbleState,
-                            tabURL: activeTab.url
-                        )
-                        .zIndex(900)
-
-                        selectionPopupOverlay
-                            .zIndex(950)
-
-                        copiedToastOverlay
-                            .zIndex(960)
                     }
+                } else {
+                    emptyTabView
                 }
-            } else {
-                emptyTabView
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Recording panel — overlaid on the trailing edge so the CEF
+            // NSView keeps its full size and is never resized.
+            if isRecording && FeatureFlagService.shared.flags.recordingPanelEnabled {
+                let _ = NSLog("[RecordStart] ③ inserting RecordingPanelView into overlay")
+                HStack(spacing: 0) {
+                    Divider()
+                    RecordingPanelView(recorder: browserState.meetingRecorderService)
+                        .frame(width: 300)
+                        .frame(maxHeight: .infinity)
+                }
+                .background(Color(nsColor: .windowBackgroundColor))
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isRecording)
         // ─────────────────────────────────────────────────────────────
         // Card Background: Solid white (light mode) or dark (dark mode)
         // Uses .background material for proper theme adaptation

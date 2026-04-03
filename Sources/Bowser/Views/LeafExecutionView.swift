@@ -176,6 +176,8 @@ struct LeafExecutionView: View {
                     sendChat(node: node)
                   }
 
+                VoiceInputButton(text: $chatInput)
+
                 Button(action: {
                   sendChat(node: node)
                 }) {

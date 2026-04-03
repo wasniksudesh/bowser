@@ -1,0 +1,227 @@
+[
+  {
+    "id": "rel-insight-vm-naming-trap-EXPLAINS-constraint-vm-folder-naming",
+    "created_at": "2026-04-03T00:00:00Z",
+    "from": {
+      "id": "insight:vm-folder-naming-trap",
+      "type": "Insight",
+      "label": "VM/ folder is Linux virtualization, not UI ViewModels",
+      "scope": "system",
+      "body": "The VM/ folder contains VMManager which boots an Alpine Linux guest to run the Python backend. It has nothing to do with MVVM. A new engineer expecting ViewModels will look here first and be misled.",
+      "failure_without": "Engineer wastes time looking in VM/ for ViewModel patterns, or incorrectly refactors it as part of a UI architecture change",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "rel": "EXPLAINS",
+    "to": {
+      "id": "constraint:vm-folder-naming",
+      "type": "Constraint",
+      "label": "VM/ folder name conflicts with common MVVM convention",
+      "scope": "system",
+      "description": "The VM/ folder hosts Apple Virtualization.framework code for an Alpine Linux guest. The name collides with the ViewModel abbreviation common in Swift/SwiftUI projects.",
+      "source": "observed-failure",
+      "hard": false,
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The naming collision between VM (Virtual Machine) and VM (ViewModel) is a real onboarding trap. This insight prevents a new engineer from misclassifying the folder's purpose during their first codebase exploration.",
+      "inferred": false
+    }
+  },
+  {
+    "id": "rel-decision-no-mvvm-SHAPED_BY-constraint-explicit-state-ownership",
+    "created_at": "2026-04-03T00:00:00Z",
+    "from": {
+      "id": "decision:no-mvvm-observable-state-containers",
+      "type": "Decision",
+      "label": "Use @Observable state containers instead of per-screen ViewModels",
+      "scope": "system",
+      "trigger": "Architecture review when adopting SwiftUI's @Observable macro",
+      "rationale": "SwiftUI's @Observable + @Bindable provides sufficient reactivity without the indirection of a ViewModel layer. State ownership is explicit: AppDelegate constructs BrowserState and AppNavigationState and passes them down.",
+      "alternatives": [
+        { "option": "Classic MVVM with per-screen ViewModels", "rejected_because": "Adds an indirection layer that duplicates state already managed by @Observable containers" },
+        { "option": "ObservableObject + @StateObject tree", "rejected_because": "Legacy pattern; @Observable is the modern replacement with less boilerplate and clearer ownership" }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "rel": "SHAPED_BY",
+    "to": {
+      "id": "constraint:explicit-state-ownership",
+      "type": "Constraint",
+      "label": "State ownership must be traceable to AppDelegate",
+      "scope": "system",
+      "description": "All top-level state is constructed in AppDelegate and passed explicitly. No @EnvironmentObject injection tree.",
+      "source": "user-requirement",
+      "hard": false,
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The constraint requires explicit, traceable state ownership. MVVM introduces ViewModels that own state independently, breaking the single-owner guarantee. @Observable containers passed from AppDelegate satisfy both reactivity and traceability.",
+      "inferred": false
+    }
+  },
+  {
+    "id": "rel-decision-browsercanvas-plain-value-SHAPED_BY-constraint-no-nsview-churn",
+    "created_at": "2026-04-03T00:00:00Z",
+    "from": {
+      "id": "decision:browsercanvas-plain-value",
+      "type": "Decision",
+      "label": "BrowserCanvas receives browserState as a plain value, not @Bindable",
+      "scope": "subsystem:browser-ui",
+      "trigger": "Observed constant NSView recreation when favicon and tab metadata updated",
+      "rationale": "BrowserCanvas is an NSViewRepresentable. @Bindable enrolls it in @Observable tracking, causing every favicon update to retrigger updateNSView. Plain value intentionally breaks the tracking boundary.",
+      "alternatives": [
+        { "option": "@Bindable browserState", "rejected_because": "Every @Observable property change (favicons, tab titles) triggers updateNSView, causing constant AppKit layout churn and visible flicker" }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "rel": "SHAPED_BY",
+    "to": {
+      "id": "constraint:no-nsview-observable-churn",
+      "type": "Constraint",
+      "label": "NSViewRepresentable must not retrigger updateNSView on every @Observable change",
+      "scope": "system",
+      "description": "SwiftUI's @Observable tracks all property access. If an NSViewRepresentable reads an @Observable property, any change triggers updateNSView, which is expensive for AppKit-wrapped views.",
+      "source": "platform",
+      "hard": true,
+      "symptom": "Visible flicker and layout thrashing in the browser view on every URL load, favicon fetch, or tab title update",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The constraint makes @Bindable unusable for any NSViewRepresentable wrapping a heavy AppKit view. Plain value is the only way to pass state without enrolling in observation tracking. This pattern applies to all NSViewRepresentables in the app, not just BrowserCanvas.",
+      "inferred": false
+    }
+  },
+  {
+    "id": "rel-decision-folder-state-replacement-SHAPED_BY-constraint-folder-scoped-storage",
+    "created_at": "2026-04-03T00:00:00Z",
+    "from": {
+      "id": "decision:folder-state-replacement",
+      "type": "Decision",
+      "label": "Replace planState and agentState objects on folder switch instead of clearing in-place",
+      "scope": "subsystem:folder-management",
+      "trigger": "State from previous folder leaked into new folder after switching",
+      "rationale": "Replacing the objects re-initializes PlanStorageManager with the new folderId. Clearing in-place leaves the wrong storage backend attached and leaks state from the previous folder.",
+      "alternatives": [
+        { "option": "Clear planState/agentState in-place", "rejected_because": "Leaves PlanStorageManager pointing at the old folderId, leaking cross-folder state" }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "rel": "SHAPED_BY",
+    "to": {
+      "id": "constraint:folder-scoped-storage",
+      "type": "Constraint",
+      "label": "Plan and agent state storage is scoped per folder, not per app session",
+      "scope": "subsystem:folder-management",
+      "description": "Each folder has its own plan storage and agent session. PlanStorageManager binds to a folderId at construction time. Switching folders must fully reset both state objects.",
+      "source": "observed-failure",
+      "hard": true,
+      "symptom": "Plans and agent history from folder A appear in folder B after switching, causing data corruption and user confusion",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The storage backend binds folderId at construction. In-place clearing resets the observable state but leaves the storage backend pointing at the old folder. Full object replacement is the only way to ensure both the observable state and the underlying storage are correctly scoped.",
+      "inferred": false
+    }
+  },
+  {
+    "id": "rel-decision-mic-avcapturesession-SHAPED_BY-constraint-cef-sck-audio-conflict",
+    "created_at": "2026-04-03T00:00:00Z",
+    "from": {
+      "id": "decision:mic-avcapturesession",
+      "type": "Decision",
+      "label": "MicCaptureService uses AVCaptureSession, not AVAudioEngine",
+      "scope": "subsystem:meeting-recorder",
+      "trigger": "CEF audio renderer crash observed when AVAudioEngine ran alongside ScreenCaptureKit",
+      "rationale": "AVCaptureSession sidesteps the Core Audio graph entirely, avoiding the conflict between CEF and SCK. AVAudioEngine modifies the shared graph, which is incompatible.",
+      "alternatives": [
+        { "option": "AVAudioEngine", "rejected_because": "Modifies shared Core Audio graph, crashes CEF when SCK is also active. Works fine in isolation but fails in the meeting recorder context." }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "rel": "SHAPED_BY",
+    "to": {
+      "id": "constraint:cef-sck-audio-conflict",
+      "type": "Constraint",
+      "label": "CEF audio renderer crashes if Core Audio graph is modified while SCK runs",
+      "scope": "system",
+      "description": "ScreenCaptureKit and CEF both use Core Audio. Any API that modifies the audio graph (like AVAudioEngine) while both are active causes a crash in CEF's renderer.",
+      "source": "observed-failure",
+      "hard": true,
+      "symptom": "CEF audio renderer crash, immediate, 100% reproducible by starting AVAudioEngine after SCK",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The constraint eliminates AVAudioEngine as an option for any mic capture that runs concurrently with screen recording. AVCaptureSession is the only viable API because it doesn't touch the Core Audio graph.",
+      "inferred": false
+    }
+  },
+  {
+    "id": "rel-decision-mic-before-sck-SHAPED_BY-constraint-cef-sck-audio-conflict",
+    "created_at": "2026-04-03T00:00:00Z",
+    "from": {
+      "id": "decision:mic-before-sck",
+      "type": "Decision",
+      "label": "Always start mic capture before system audio (SCK) in meeting recorder",
+      "scope": "subsystem:meeting-recorder",
+      "trigger": "Crash when reversing start order during meeting recorder development",
+      "rationale": "Starting SCK before AVCaptureSession is initialized triggers the same CEF audio crash. Mic-first ensures AVCaptureSession claims its resources before SCK modifies the graph.",
+      "alternatives": [
+        { "option": "Start SCK first", "rejected_because": "Crashes CEF audio renderer — SCK modifies audio graph before AVCaptureSession is ready" },
+        { "option": "Start both concurrently", "rejected_because": "Race condition leads to same crash intermittently" }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "rel": "SHAPED_BY",
+    "to": {
+      "id": "constraint:cef-sck-audio-conflict",
+      "type": "Constraint",
+      "label": "CEF audio renderer crashes if Core Audio graph is modified while SCK runs",
+      "scope": "system",
+      "description": "ScreenCaptureKit and CEF both use Core Audio. Any API that modifies the audio graph (like AVAudioEngine) while both are active causes a crash in CEF's renderer.",
+      "source": "observed-failure",
+      "hard": true,
+      "symptom": "CEF audio renderer crash, immediate, 100% reproducible by starting AVAudioEngine after SCK",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The same CEF/SCK conflict also dictates initialization order, not just API choice. AVCaptureSession must be fully initialized before SCK starts, or the audio graph modification still triggers the crash.",
+      "inferred": false
+    }
+  },
+  {
+    "id": "rel-insight-two-audio-paths-EXPLAINS-decision-mic-avcapturesession",
+    "created_at": "2026-04-03T00:00:00Z",
+    "from": {
+      "id": "insight:dictation-vs-meeting-mic",
+      "type": "Insight",
+      "label": "VoiceInputService and MicCaptureService are independent mic paths that must not be confused",
+      "scope": "system",
+      "body": "VoiceInputService (AVAudioEngine, 2s chunks) handles inline dictation. MicCaptureService (AVCaptureSession, 5s chunks) handles meeting recording. Both POST to /api/transcribe but are never active simultaneously. VoiceInputService CAN use AVAudioEngine because it never runs during screen capture.",
+      "failure_without": "Engineer attempts to unify the two services into one, or wonders why two services use different audio APIs for the same endpoint. Unifying them reintroduces the CEF/SCK crash during meetings.",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "rel": "EXPLAINS",
+    "to": {
+      "id": "decision:mic-avcapturesession",
+      "type": "Decision",
+      "label": "MicCaptureService uses AVCaptureSession, not AVAudioEngine",
+      "scope": "subsystem:meeting-recorder",
+      "trigger": "CEF audio renderer crash observed when AVAudioEngine ran alongside ScreenCaptureKit",
+      "rationale": "AVCaptureSession sidesteps the Core Audio graph entirely, avoiding the conflict between CEF and SCK. AVAudioEngine modifies the shared graph, which is incompatible.",
+      "alternatives": [
+        { "option": "AVAudioEngine", "rejected_because": "Modifies shared Core Audio graph, crashes CEF when SCK is also active. Works fine in isolation but fails in the meeting recorder context." }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-03T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "Without this insight, the existence of two mic services using different APIs looks like accidental duplication. The split is intentional: VoiceInputService can use AVAudioEngine because dictation never runs concurrently with SCK.",
+      "inferred": false
+    }
+  }
+]

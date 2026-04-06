@@ -17,3 +17,4 @@ No requirement for backward compatibility, can always make breaking changes.
 Use standard icons 
 Frontend changes should be consistent with overall theme of the project. 
 Always clean up dead-code if there's new code being written to replace it. 
+Always prefer using open-source libraries when possible. 

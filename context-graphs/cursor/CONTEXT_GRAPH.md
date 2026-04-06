@@ -285,3 +285,49 @@ constraint:cef-sck-audio-conflict [system, hard]
 ```
 
 Module-scope entries stay local. System and subsystem scope entries are candidates for the global graph. The ingestion server handles slug normalization and semantic deduplication across contributors.
+
+---
+
+## Document store: full chat transcripts
+
+Alongside the structured graph, full chat transcripts go into a **document store** (standard RAG vector index — not Neo4j). These capture the reasoning narrative that can't be compressed into nodes: step-by-step investigation, ruled-out hypotheses, design discussion context.
+
+### Where Cursor transcripts live
+
+Cursor writes every agent chat as a `.jsonl` file:
+
+```
+~/.cursor/projects/<project-slug>/agent-transcripts/<uuid>/<uuid>.jsonl
+```
+
+For this repo:
+
+```
+~/.cursor/projects/Users-sudesh-bank-bowser/agent-transcripts/
+```
+
+Each subdirectory is one chat session named by UUID. The `.jsonl` inside has one JSON object per turn:
+
+```json
+{"role": "user",      "message": {"content": [{"type": "text", "text": "..."}]}}
+{"role": "assistant", "message": {"content": [{"type": "text", "text": "..."}]}}
+```
+
+### Indexing pipeline (to build)
+
+1. Parse `.jsonl` → extract plain text turns
+2. LLM generates: `title`, `summary`, `topics[]`
+3. Link to graph nodes: every node in `semantics.json` carries `source_chat: "<uuid>"` — collect all node IDs where `source_chat` matches this transcript's UUID → populate `nodes_referenced[]`
+4. Embed `title + summary` → store in document store as `doc:cursor-<uuid>`
+
+The `source_chat` field on every graph node is the primary join key. Given a node, you immediately have the transcript UUID. Given a transcript UUID, you can retrieve all nodes produced in that session.
+
+### Filter: which chats to index
+
+Not all chats are worth indexing. Index when:
+- Chat has > 20 turns (depth indicates a real investigation or design discussion)
+- Multiple user follow-ups (not a one-shot fix)
+- Chat produced entries in `semantics.json` (agent found it graph-worthy)
+- Git log shows file changes in the same time window (conclusion was reached)
+
+Skip one-shot chats (syntax fixes, single-file edits, lookup questions).

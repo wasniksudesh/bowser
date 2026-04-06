@@ -223,5 +223,320 @@
       "edge_context": "Without this insight, the existence of two mic services using different APIs looks like accidental duplication. The split is intentional: VoiceInputService can use AVAudioEngine because dictation never runs concurrently with SCK.",
       "inferred": false
     }
+  },
+  {
+    "id": "rel-decision-cef-for-web-engine-SHAPED_BY-constraint-wkwebview-view-not-reparentable",
+    "created_at": "2026-04-04T00:00:00Z",
+    "from": {
+      "id": "decision:cef-for-web-engine",
+      "type": "Decision",
+      "label": "Use CEF (Chromium Embedded Framework) instead of WKWebView as the web engine",
+      "scope": "system",
+      "trigger": "Architecture decision during initial browser design — needed a web engine that supports view reparenting across split panes and tab switches without destroying page state",
+      "rationale": "CEF embeds Chromium as a C++ library, giving full ownership of the NSView hierarchy and renderer process. This is required for the view reparenting pattern (keeping a browser instance alive while swapping it between split panes). WKWebView renders in an Apple-controlled subprocess; its NSView is opaque and cannot be reparented. CEF also provides a Chromium-compatible extension runtime needed for future extension support, and allows deeper JS interop for the AI agent layer.",
+      "alternatives": [
+        {
+          "option": "WKWebView",
+          "rejected_because": "Renders in an Apple-controlled process. The NSView it exposes cannot be freely reparented. Switching tabs or creating split panes would destroy and recreate the webview, causing page reload and loss of in-page state. No extension runtime. JS interop is sandboxed."
+        }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "rel": "SHAPED_BY",
+    "to": {
+      "id": "constraint:wkwebview-view-not-reparentable",
+      "type": "Constraint",
+      "label": "WKWebView's NSView cannot be reparented across container changes",
+      "scope": "system",
+      "description": "WKWebView renders in an Apple-controlled subprocess (com.apple.WebKit.WebContent). The NSView it vends is managed by that process and cannot be detached from its original parent and reattached elsewhere in the view hierarchy without destroying the renderer.",
+      "source": "platform",
+      "hard": true,
+      "symptom": "Tab switches and split pane creation destroy and recreate the webview process, causing full page reload and loss of all in-page state (scroll position, form data, JS heap).",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The view reparenting pattern — keeping a CEF browser instance alive while swapping it between SplitPaneViewController slots — is architecturally central to Bowser. WKWebView makes this impossible at the platform level. CEF is the only mainstream web engine that gives ownership of the renderer NSView.",
+      "inferred": true
+    }
+  },
+  {
+    "id": "rel-decision-cef-enterprise-SHAPED_BY-constraint-enterprise-dlp-runtime-control",
+    "created_at": "2026-04-04T00:00:00Z",
+    "from": {
+      "id": "decision:cef-for-web-engine-enterprise",
+      "type": "Decision",
+      "label": "Use CEF to satisfy enterprise DLP, security, proxy, and audit requirements",
+      "scope": "system",
+      "trigger": "Enterprise product requirements demand deep control over browser runtime internals — network interception, DLP policy enforcement, proxy routing, and a full audit trail of browser activity.",
+      "rationale": "CEF embeds Chromium as a C++ library, granting ownership of the full network stack, renderer process, and request lifecycle. This is the only way to implement: (1) DLP policies that intercept and inspect outbound data at the network layer, (2) a Swift-controlled HTTP proxy over vsock for fine-grained domain whitelisting and API call auditing, (3) enterprise proxy routing, and (4) browser action audit logs. WKWebView runs in an Apple-controlled process and exposes no hooks into the network stack at this level.",
+      "alternatives": [
+        {
+          "option": "WKWebView",
+          "rejected_because": "Network stack is Apple-controlled and opaque. No mechanism to intercept requests at the depth required for DLP enforcement, proxy injection, or per-request audit. WKURLSchemeHandler covers custom schemes only — it cannot intercept standard HTTPS traffic for inspection."
+        },
+        {
+          "option": "Electron (Chromium via Node)",
+          "rejected_because": "Electron wraps Chromium but exposes a Node.js IPC boundary, not direct C++ hooks. Runtime-level DLP interception, custom proxy injection, and CEF request callbacks are not available at the same depth as embedding CEF directly."
+        }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "rel": "SHAPED_BY",
+    "to": {
+      "id": "constraint:enterprise-dlp-requires-browser-runtime-control",
+      "type": "Constraint",
+      "label": "Enterprise DLP and audit require ownership of the browser network stack and request lifecycle",
+      "scope": "system",
+      "description": "Enterprise features — DLP policy enforcement, proxy support with domain whitelisting, and per-request audit logging — require intercepting and inspecting network traffic at the browser runtime level, below the JS layer. No managed webview API (WKWebView, Android WebView) exposes this.",
+      "source": "user-requirement",
+      "hard": true,
+      "symptom": "DLP policies cannot be enforced, proxy routing cannot be injected, and audit logs have gaps — the browser becomes a blind spot in enterprise network monitoring.",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "This constraint is the primary architectural driver for CEF. All other benefits of CEF (view reparenting, extension runtime) are secondary. Any future proposal to replace CEF must first show how this constraint is satisfied.",
+      "inferred": false
+    }
+  },
+  {
+    "id": "rel-decision-cef-enterprise-SUPERSEDES-decision-cef-for-web-engine",
+    "created_at": "2026-04-04T00:00:00Z",
+    "from": {
+      "id": "decision:cef-for-web-engine-enterprise",
+      "type": "Decision",
+      "label": "Use CEF to satisfy enterprise DLP, security, proxy, and audit requirements",
+      "scope": "system",
+      "trigger": "Enterprise product requirements demand deep control over browser runtime internals — network interception, DLP policy enforcement, proxy routing, and a full audit trail of browser activity.",
+      "rationale": "CEF embeds Chromium as a C++ library, granting ownership of the full network stack, renderer process, and request lifecycle. This is the only way to implement: (1) DLP policies that intercept and inspect outbound data at the network layer, (2) a Swift-controlled HTTP proxy over vsock for fine-grained domain whitelisting and API call auditing, (3) enterprise proxy routing, and (4) browser action audit logs. WKWebView runs in an Apple-controlled process and exposes no hooks into the network stack at this level.",
+      "alternatives": [
+        {
+          "option": "WKWebView",
+          "rejected_because": "Network stack is Apple-controlled and opaque. No mechanism to intercept requests at the depth required for DLP enforcement, proxy injection, or per-request audit. WKURLSchemeHandler covers custom schemes only — it cannot intercept standard HTTPS traffic for inspection."
+        },
+        {
+          "option": "Electron (Chromium via Node)",
+          "rejected_because": "Electron wraps Chromium but exposes a Node.js IPC boundary, not direct C++ hooks. Runtime-level DLP interception, custom proxy injection, and CEF request callbacks are not available at the same depth as embedding CEF directly."
+        }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "rel": "SUPERSEDES",
+    "to": {
+      "id": "decision:cef-for-web-engine",
+      "type": "Decision",
+      "label": "Use CEF (Chromium Embedded Framework) instead of WKWebView as the web engine",
+      "scope": "system",
+      "trigger": "Architecture decision during initial browser design — needed a web engine that supports view reparenting across split panes and tab switches without destroying page state",
+      "rationale": "CEF embeds Chromium as a C++ library, giving full ownership of the NSView hierarchy and renderer process. This is required for the view reparenting pattern (keeping a browser instance alive while swapping it between split panes). WKWebView renders in an Apple-controlled subprocess; its NSView is opaque and cannot be reparented. CEF also provides a Chromium-compatible extension runtime needed for future extension support, and allows deeper JS interop for the AI agent layer.",
+      "alternatives": [
+        {
+          "option": "WKWebView",
+          "rejected_because": "Renders in an Apple-controlled process. The NSView it exposes cannot be freely reparented. Switching tabs or creating split panes would destroy and recreate the webview, causing page reload and loss of in-page state. No extension runtime. JS interop is sandboxed."
+        }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The original entry captured view reparenting as the primary rationale. The user clarified that the actual primary driver is enterprise DLP, security, and audit requirements. View reparenting is a secondary benefit. This entry supersedes the old one with the correct root cause.",
+      "inferred": false
+    }
+  },
+  {
+    "id": "rel-decision-swift-swiftui-native-shell-SHAPED_BY-constraint-arc-aesthetics-require-appkit",
+    "created_at": "2026-04-04T00:00:00Z",
+    "from": {
+      "id": "decision:swift-swiftui-native-shell",
+      "type": "Decision",
+      "label": "Build the browser shell in Swift 6 + SwiftUI with AppKit interop",
+      "scope": "system",
+      "trigger": "Arc-style browser aesthetic requires NSVisualEffectView vibrancy, frameless NSWindow with repositioned traffic lights, and hardware-accelerated native overlays — none of which are available outside of AppKit/SwiftUI.",
+      "rationale": "The target UI (persistent vibrancy sidebar, floating web canvas card, custom window chrome) depends on macOS-exclusive APIs: NSVisualEffectView for the blurred sidebar material, NSWindow subclassing to remove the title bar and reposition traffic lights, and NSViewRepresentable bridges to embed AppKit views inside SwiftUI. Swift 6 + SwiftUI provides @Observable for low-overhead reactive state, strict @MainActor concurrency to safely bridge CEF C++ callbacks, and NavigationSplitView for the sidebar/detail split.",
+      "alternatives": [
+        {
+          "option": "Electron",
+          "rejected_because": "No access to NSVisualEffectView, NSWindow subclassing, or AppKit APIs. Vibrancy and frameless chrome are non-trivial hacks in Electron that look noticeably non-native and carry significant memory/CPU overhead."
+        },
+        {
+          "option": "Pure AppKit (no SwiftUI)",
+          "rejected_because": "Significantly more verbose. @Observable and NavigationSplitView provide reactivity and layout that would require manual implementation in pure AppKit. SwiftUI + AppKit interop gets both."
+        }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "rel": "SHAPED_BY",
+    "to": {
+      "id": "constraint:arc-aesthetics-require-appkit",
+      "type": "Constraint",
+      "label": "Arc-style visuals require macOS-exclusive AppKit APIs unavailable in cross-platform toolkits",
+      "scope": "system",
+      "description": "NSVisualEffectView (vibrancy/blur), NSWindow title bar removal, traffic light repositioning, and hardware-composited NSView layering are macOS-only APIs. No cross-platform toolkit exposes them at the fidelity needed for the target aesthetic.",
+      "source": "user-requirement",
+      "hard": true,
+      "symptom": "Sidebar vibrancy effect, frameless window, and custom traffic light layout are absent or visually degraded — the app looks like a generic cross-platform wrapper rather than a native macOS browser.",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The Arc-style aesthetic is a core product requirement, not an afterthought. Every AppKit-specific API used in the shell (NSVisualEffectView, FramelessWindow, NSViewRepresentable) exists because this constraint eliminated all cross-platform alternatives at the outset.",
+      "inferred": true
+    }
+  },
+  {
+    "id": "rel-decision-alpine-vm-over-container-SHAPED_BY-constraint-enterprise-vm-process-isolation",
+    "created_at": "2026-04-04T00:00:00Z",
+    "from": {
+      "id": "decision:alpine-vm-over-container",
+      "type": "Decision",
+      "label": "Run Python backend in Alpine Linux VM, not a Docker container",
+      "scope": "subsystem:vm-backend",
+      "trigger": "Enterprise security requirement for a genuine process boundary around the AI backend, not just namespace isolation",
+      "rationale": "Docker containers share the host kernel. A compromised or buggy Python process inside a container can exploit kernel vulnerabilities to escape. Apple Virtualization.framework provides a hardware VM boundary with a separate kernel, separate process tree, and vsock-only IPC — the Python runtime is physically unable to reach the host network or filesystem without an explicit Swift-mediated bridge.",
+      "alternatives": [
+        {
+          "option": "Docker container",
+          "rejected_because": "Shares the host kernel. Container escape vulnerabilities are real. Cannot provide the network isolation guarantee (vsock-only) because Docker networking sits on top of the host TCP stack."
+        },
+        {
+          "option": "macOS App Sandbox",
+          "rejected_because": "Sandboxes the Swift app process, not a separate Python runtime. Python dependencies and agent tools require filesystem and network access patterns that would require broad entitlements, negating the sandbox benefit."
+        }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "rel": "SHAPED_BY",
+    "to": {
+      "id": "constraint:enterprise-vm-process-isolation",
+      "type": "Constraint",
+      "label": "Enterprise security requires a hardware VM boundary around the Python backend, not container isolation",
+      "scope": "subsystem:vm-backend",
+      "description": "The Python backend runs LLM agents and handles sensitive enterprise data. Enterprise security posture requires that a compromise of the Python runtime cannot reach the host OS, user filesystem, or corporate network. This requires a full VM boundary — kernel-level separation — not Docker namespace isolation.",
+      "source": "user-requirement",
+      "hard": true,
+      "symptom": "A compromised Python agent process can escape to the host OS, access user files, or make unauthorized network calls — unacceptable in an enterprise deployment.",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The VM choice is not about performance or packaging convenience — it is the security boundary. Any proposal to replace the VM with a container must first address the kernel-sharing and network isolation gaps.",
+      "inferred": false
+    }
+  },
+  {
+    "id": "rel-decision-vsock-only-no-tcp-SHAPED_BY-constraint-enterprise-vm-process-isolation",
+    "created_at": "2026-04-04T00:00:00Z",
+    "from": {
+      "id": "decision:vsock-only-no-tcp",
+      "type": "Decision",
+      "label": "VM has no TCP/IP network — only vsock to the host Swift process",
+      "scope": "subsystem:vm-backend",
+      "trigger": "Need to guarantee the Python backend cannot make unauthorized outbound network calls",
+      "rationale": "vsock is a host↔guest socket that bypasses the guest's network stack entirely. With no ethernet interface and no TCP/IP in the VM, the Python backend physically cannot reach the internet, the corporate network, or any host TCP service. All external network access must be explicitly proxied by the Swift side — which can enforce domain whitelists and audit every call.",
+      "alternatives": [
+        {
+          "option": "NAT networking with firewall rules",
+          "rejected_because": "Firewall rules can be misconfigured or bypassed. A process with network access can attempt connections; whether they succeed depends on rule correctness. vsock-only provides a structural guarantee, not a policy-dependent one."
+        },
+        {
+          "option": "Host-only network adapter",
+          "rejected_because": "Still a TCP/IP stack inside the VM. The VM could attempt TCP connections to other VMs or host services on the same subnet. vsock is narrower and auditable."
+        }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "rel": "SHAPED_BY",
+    "to": {
+      "id": "constraint:enterprise-vm-process-isolation",
+      "type": "Constraint",
+      "label": "Enterprise security requires a hardware VM boundary around the Python backend, not container isolation",
+      "scope": "subsystem:vm-backend",
+      "description": "The Python backend runs LLM agents and handles sensitive enterprise data. Enterprise security posture requires that a compromise of the Python runtime cannot reach the host OS, user filesystem, or corporate network. This requires a full VM boundary — kernel-level separation — not Docker namespace isolation.",
+      "source": "user-requirement",
+      "hard": true,
+      "symptom": "A compromised Python agent process can escape to the host OS, access user files, or make unauthorized network calls — unacceptable in an enterprise deployment.",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "vsock-only is the enforcement mechanism for network isolation. The same enterprise constraint that drove the VM choice also drives the no-TCP decision — the two are inseparable parts of the same security model.",
+      "inferred": false
+    }
+  },
+  {
+    "id": "rel-decision-two-disk-ro-rw-SHAPED_BY-constraint-immutable-runtime-and-encrypted-data",
+    "created_at": "2026-04-04T00:00:00Z",
+    "from": {
+      "id": "decision:two-disk-ro-system-rw-encrypted-data",
+      "type": "Decision",
+      "label": "Split VM storage into read-only system.img and LUKS-encrypted read-write mem0.img",
+      "scope": "subsystem:vm-backend",
+      "trigger": "Need to simultaneously guarantee runtime immutability and encrypted persistence of user data (Qdrant vectors, memories)",
+      "rationale": "A single read-write disk cannot provide immutability. A single read-only disk cannot persist user data. Two disks solve both: system.img is read-only (the running Python code cannot modify itself or the OS), mem0.img is writable but LUKS2-encrypted and mounted noexec (data cannot be executed as code). The LUKS key is never stored inside the VM — it is passed from macOS Keychain via vsock at boot and lives only in kernel memory.",
+      "alternatives": [
+        {
+          "option": "Single read-write encrypted disk",
+          "rejected_because": "The Python runtime itself is on the writable partition, so a compromised process could modify its own code or the OS. No immutability guarantee."
+        },
+        {
+          "option": "Single read-only disk with no persistence",
+          "rejected_because": "Qdrant vector data and user memories cannot survive VM restarts. The AI memory feature requires durable storage."
+        }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "rel": "SHAPED_BY",
+    "to": {
+      "id": "constraint:immutable-runtime-and-encrypted-data-at-rest",
+      "type": "Constraint",
+      "label": "Python runtime must be immutable; user data must be encrypted at rest with key never persisting in VM",
+      "scope": "subsystem:vm-backend",
+      "description": "Enterprise security requires (1) the Python runtime cannot modify itself at runtime, and (2) user data (vectors, memories) is encrypted at rest with a key that a VM-level compromise cannot retrieve. The LUKS key lives only in macOS Keychain and is passed to the VM at boot — never written to any VM disk.",
+      "source": "user-requirement",
+      "hard": true,
+      "symptom": "A compromised Python process modifies its own code (persistence attack), or user memory data is readable on disk without the Keychain key.",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The two-disk split is the structural implementation of two independent security requirements that happen to pull in opposite directions (immutability vs. persistence). Neither requirement can be satisfied with a single disk.",
+      "inferred": false
+    }
+  },
+  {
+    "id": "rel-insight-dev-direct-python-prod-vm-EXPLAINS-decision-dev-prod-mode-split",
+    "created_at": "2026-04-04T00:00:00Z",
+    "from": {
+      "id": "insight:dev-direct-python-prod-vm",
+      "type": "Insight",
+      "label": "Dev uses direct Python process on macOS; production uses VM exclusively — they are not the same code path",
+      "scope": "subsystem:vm-backend",
+      "body": "run_dev.sh launches the Python sidecar as a direct macOS process on TCP :8765. The release build boots an Alpine Linux VM and communicates over vsock. These are structurally different transports. A bug visible in production (vsock, LUKS unlock, VM startup timing) will not reproduce in dev. The dev mode guard is a runtime flag, not a compile-time switch.",
+      "failure_without": "Engineer spends hours debugging a vsock or VM boot issue that is invisible in their dev environment because they are running the direct-Python path without realising it.",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "rel": "EXPLAINS",
+    "to": {
+      "id": "decision:dev-prod-mode-split",
+      "type": "Decision",
+      "label": "Keep direct Python process for dev, VM-only for production release",
+      "scope": "subsystem:vm-backend",
+      "trigger": "VM boot adds ~5-10 seconds to app startup and requires a 500MB image download; fast iteration in dev requires bypassing this",
+      "rationale": "The VM security model is a production requirement, not a dev requirement. Forcing every dev run through a VM boot/LUKS unlock cycle would make iteration impractically slow. The dev path uses a direct Python process on localhost; the production path uses the VM exclusively. The switch is a runtime detection in the app.",
+      "alternatives": [
+        {
+          "option": "Always use VM, even in dev",
+          "rejected_because": "VM boot time (~5-10s), LUKS setup, and image management add significant friction to the dev loop. The security isolation is not needed when running on a developer's own machine."
+        }
+      ],
+      "confidence": "high",
+      "created_at": "2026-04-04T00:00:00Z"
+    },
+    "properties": {
+      "edge_context": "The dev/prod split means some production failure modes — vsock transport errors, LUKS unlock failures, VM startup races — are structurally unobservable in the standard dev workflow. Engineers need to know this before assuming dev parity.",
+      "inferred": false
+    }
   }
 ]

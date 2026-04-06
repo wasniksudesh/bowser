@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "supercontext": {
+      "url": "http://localhost:7847/mcp/sse",
+      "headers": {}
+    }
+  }
+}

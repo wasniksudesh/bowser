@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Context graph</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --link: #3d4f66;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 10px 16px;
+      background: var(--panel);
+      border-bottom: 1px solid #30363d;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    header p {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+      flex: 1;
+      min-width: 200px;
+    }
+    #file-input { font-size: 0.75rem; color: var(--muted); }
+    #status { font-size: 0.8rem; color: var(--muted); }
+    #chart {
+      flex: 1;
+      min-height: 400px;
+      cursor: grab;
+    }
+    #chart:active { cursor: grabbing; }
+    .node circle {
+      stroke: #30363d;
+      stroke-width: 1.5px;
+    }
+    .node text {
+      font-size: 10px;
+      fill: var(--text);
+      pointer-events: none;
+      text-shadow: 0 0 3px var(--bg), 0 0 6px var(--bg);
+    }
+    .link {
+      stroke: var(--link);
+      stroke-opacity: 0.85;
+    }
+    .link-label {
+      font-size: 9px;
+      fill: var(--muted);
+      pointer-events: none;
+    }
+    #legend {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      background: rgba(26, 35, 50, 0.92);
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #30363d;
+      font-size: 11px;
+    }
+    #legend span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+    .wrap { position: relative; flex: 1; display: flex; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>neo4j-graph.json</h1>
+    <p id="status">Loading…</p>
+    <label id="file-input">Or load file: <input type="file" accept=".json" /></label>
+  </header>
+  <div class="wrap">
+    <svg id="chart"></svg>
+    <div id="legend"></div>
+  </div>
+
+  <script>
+    function stripEmbeddings(value) {
+      if (Array.isArray(value)) {
+        return value.map(stripEmbeddings);
+      }
+      if (value && typeof value === "object") {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) {
+          if (k === "embedding") continue;
+          out[k] = stripEmbeddings(v);
+        }
+        return out;
+      }
+      return value;
+    }
+
+    /** Word-wrap to lines of at most maxLen characters (breaks on spaces). */
+    function wrapLines(text, maxLen) {
+      const s = String(text || "").trim();
+      if (!s) return [];
+      const words = s.split(/\s+/);
+      const lines = [];
+      let line = "";
+      for (const w of words) {
+        if (!line.length) {
+          line = w;
+        } else if (line.length + 1 + w.length <= maxLen) {
+          line += " " + w;
+        } else {
+          lines.push(line);
+          line = w;
+        }
+      }
+      if (line) lines.push(line);
+      return lines;
+    }
+
+    function nodePrimaryText(d) {
+      const p = d.properties || {};
+      return (p.label && String(p.label).trim()) || d.id;
+    }
+
+    const LABEL_COLORS = {
+      Decision: "#58a6ff",
+      Constraint: "#f85149",
+      Insight: "#3fb950",
+      Signal: "#d29922",
+      Service: "#e8b4f8",
+      default: "#a371f7",
+    };
+
+    const NODE_RADIUS = {
+      Service: 16,
+      default: 10,
+    };
+
+    function colorForNode(d) {
+      const lab = d.labels && d.labels[0];
+      return LABEL_COLORS[lab] || LABEL_COLORS.default;
+    }
+
+    function radiusForNode(d) {
+      const lab = d.labels && d.labels[0];
+      return NODE_RADIUS[lab] || NODE_RADIUS.default;
+    }
+
+    function buildGraph(data) {
+      const raw = stripEmbeddings(data);
+      const nodes = (raw.nodes || []).map((n) => {
+        const node = {
+          id: n.id,
+          labels: n.labels || [],
+          properties: n.properties || {},
+        };
+        node._labelLines = wrapLines(nodePrimaryText(node), 52);
+        if (!node._labelLines.length) node._labelLines = [node.id];
+        return node;
+      });
+      const links = (raw.relationships || []).map((r) => ({
+        source: r.startNodeId,
+        target: r.endNodeId,
+        relType: r.type,
+        id: r.id,
+        properties: r.properties || {},
+      }));
+
+      const legend = document.getElementById("legend");
+      legend.innerHTML = Object.entries(LABEL_COLORS)
+        .filter(([k]) => k !== "default")
+        .map(([k, c]) => `<div><span style="background:${c}"></span>${k}</div>`)
+        .join("") +
+        `<div style="margin-top:6px;border-top:1px solid #30363d;padding-top:6px">` +
+        `<svg width="16" height="8" style="vertical-align:middle;margin-right:6px"><line x1="0" y1="4" x2="16" y2="4" stroke="#8b949e" stroke-width="1" stroke-dasharray="4 3"/></svg>BELONGS_TO</div>`;
+
+      const svg = d3.select("#chart");
+      svg.selectAll("*").remove();
+
+      const container = document.querySelector(".wrap");
+      const width = container.clientWidth;
+      const height = Math.max(400, window.innerHeight - 56);
+
+      svg.attr("width", width).attr("height", height);
+
+      const gRoot = svg.append("g");
+      const zoom = d3.zoom().scaleExtent([0.2, 4]).on("zoom", (ev) => {
+        gRoot.attr("transform", ev.transform);
+      });
+      svg.call(zoom);
+
+      const simulation = d3
+        .forceSimulation(nodes)
+        .force(
+          "link",
+          d3
+            .forceLink(links)
+            .id((d) => d.id)
+            .distance((d) => d.relType === "BELONGS_TO" ? 180 : 100)
+            .strength((d) => d.relType === "BELONGS_TO" ? 0.15 : 0.6)
+        )
+        .force("charge", d3.forceManyBody().strength((d) => d.labels && d.labels[0] === "Service" ? -600 : -220))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force(
+          "collision",
+          d3.forceCollide().radius((d) => {
+            const base = d.labels && d.labels[0] === "Service" ? 20 : 14;
+            return base + Math.min(8 * (d._labelLines?.length || 1), 200);
+          })
+        );
+
+      const link = gRoot
+        .append("g")
+        .attr("class", "links")
+        .selectAll("line")
+        .data(links)
+        .join("line")
+        .attr("class", "link")
+        .attr("stroke-width", (d) => d.relType === "BELONGS_TO" ? 0.8 : 1.2)
+        .attr("stroke-opacity", (d) => d.relType === "BELONGS_TO" ? 0.35 : 0.85)
+        .attr("stroke-dasharray", (d) => d.relType === "BELONGS_TO" ? "4 3" : null);
+
+      const linkLabel = gRoot
+        .append("g")
+        .attr("class", "link-labels")
+        .selectAll("text")
+        .data(links.filter((d) => d.relType !== "BELONGS_TO"))
+        .join("text")
+        .attr("class", "link-label")
+        .text((d) => d.relType);
+
+      const node = gRoot
+        .append("g")
+        .attr("class", "nodes")
+        .selectAll("g")
+        .data(nodes)
+        .join("g")
+        .attr("class", "node")
+        .call(
+          d3
+            .drag()
+            .on("start", (ev, d) => {
+              if (!ev.active) simulation.alphaTarget(0.3).restart();
+              d.fx = d.x;
+              d.fy = d.y;
+            })
+            .on("drag", (ev, d) => {
+              d.fx = ev.x;
+              d.fy = ev.y;
+            })
+            .on("end", (ev, d) => {
+              if (!ev.active) simulation.alphaTarget(0);
+              d.fx = null;
+              d.fy = null;
+            })
+        );
+
+      node
+        .append("circle")
+        .attr("r", radiusForNode)
+        .attr("fill", colorForNode)
+        .attr("stroke-width", (d) => d.labels && d.labels[0] === "Service" ? 2.5 : 1.5);
+
+      node
+        .append("title")
+        .text((d) => {
+          const p = d.properties;
+          const lines = [
+            d.id,
+            (d.labels || []).join(", "),
+            p.label || "",
+            p.body || p.description || p.rationale || "",
+          ].filter(Boolean);
+          return lines.join("\n");
+        });
+
+      node
+        .append("text")
+        .attr("class", "node-label")
+        .each(function (d) {
+          const g = d3.select(this);
+          const lines = d._labelLines || [d.id];
+          lines.forEach((line, i) => {
+            g.append("tspan")
+              .attr("x", 14)
+              .attr("dy", i === 0 ? "0.35em" : "1.15em")
+              .text(line);
+          });
+        });
+
+      simulation.on("tick", () => {
+        link
+          .attr("x1", (d) => d.source.x)
+          .attr("y1", (d) => d.source.y)
+          .attr("x2", (d) => d.target.x)
+          .attr("y2", (d) => d.target.y);
+
+        linkLabel
+          .attr("x", (d) => (d.source.x + d.target.x) / 2)
+          .attr("y", (d) => (d.source.y + d.target.y) / 2)
+          .attr("text-anchor", "middle");
+
+        node.attr("transform", (d) => `translate(${d.x},${d.y})`);
+      });
+
+      document.getElementById("status").textContent =
+        `${nodes.length} nodes · ${links.length} relationships · drag nodes · scroll to zoom`;
+
+      window.addEventListener(
+        "resize",
+        () => {
+          const w = container.clientWidth;
+          const h = Math.max(400, window.innerHeight - 56);
+          svg.attr("width", w).attr("height", h);
+          simulation.force("center", d3.forceCenter(w / 2, h / 2));
+          simulation.alpha(0.3).restart();
+        },
+        { once: false }
+      );
+    }
+
+    function setError(msg) {
+      document.getElementById("status").textContent = msg;
+    }
+
+    fetch("neo4j-graph.json")
+      .then((r) => {
+        if (!r.ok) throw new Error(r.statusText);
+        return r.json();
+      })
+      .then(buildGraph)
+      .catch(() => {
+        setError(
+          "Could not load neo4j-graph.json (open via local HTTP server from this folder, or use the file picker)."
+        );
+      });
+
+    document.querySelector("#file-input input").addEventListener("change", (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          buildGraph(JSON.parse(reader.result));
+        } catch (e) {
+          setError("Invalid JSON: " + e.message);
+        }
+      };
+      reader.readAsText(file);
+    });
+  </script>
+</body>
+</html>

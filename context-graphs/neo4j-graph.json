@@ -1,0 +1,828 @@
+{
+  "nodes": [
+    {
+      "id": "insight:vm-folder-naming-trap",
+      "labels": [
+        "Insight"
+      ],
+      "properties": {
+        "label": "VM/ folder is Linux virtualization, not UI ViewModels",
+        "scope": "system",
+        "body": "The VM/ folder contains VMManager which boots an Alpine Linux guest to run the Python backend. It has nothing to do with MVVM. A new engineer expecting ViewModels will look here first and be misled.",
+        "failure_without": "Engineer wastes time looking in VM/ for ViewModel patterns, or incorrectly refactors it as part of a UI architecture change",
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "constraint:vm-folder-naming",
+      "labels": [
+        "Constraint"
+      ],
+      "properties": {
+        "label": "VM/ folder name conflicts with common MVVM convention",
+        "scope": "system",
+        "description": "The VM/ folder hosts Apple Virtualization.framework code for an Alpine Linux guest. The name collides with the ViewModel abbreviation common in Swift/SwiftUI projects.",
+        "source": "observed-failure",
+        "hard": false,
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:no-mvvm-observable-state-containers",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "Use @Observable state containers instead of per-screen ViewModels",
+        "scope": "system",
+        "trigger": "Architecture review when adopting SwiftUI's @Observable macro",
+        "rationale": "SwiftUI's @Observable + @Bindable provides sufficient reactivity without the indirection of a ViewModel layer. State ownership is explicit: AppDelegate constructs BrowserState and AppNavigationState and passes them down.",
+        "alternatives": "[{\"option\": \"Classic MVVM with per-screen ViewModels\", \"rejected_because\": \"Adds an indirection layer that duplicates state already managed by @Observable containers\"}, {\"option\": \"ObservableObject + @StateObject tree\", \"rejected_because\": \"Legacy pattern; @Observable is the modern replacement with less boilerplate and clearer ownership\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "constraint:explicit-state-ownership",
+      "labels": [
+        "Constraint"
+      ],
+      "properties": {
+        "label": "State ownership must be traceable to AppDelegate",
+        "scope": "system",
+        "description": "All top-level state is constructed in AppDelegate and passed explicitly. No @EnvironmentObject injection tree.",
+        "source": "user-requirement",
+        "hard": false,
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:browsercanvas-plain-value",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "BrowserCanvas receives browserState as a plain value, not @Bindable",
+        "scope": "subsystem:browser-ui",
+        "trigger": "Observed constant NSView recreation when favicon and tab metadata updated",
+        "rationale": "BrowserCanvas is an NSViewRepresentable. @Bindable enrolls it in @Observable tracking, causing every favicon update to retrigger updateNSView. Plain value intentionally breaks the tracking boundary.",
+        "alternatives": "[{\"option\": \"@Bindable browserState\", \"rejected_because\": \"Every @Observable property change (favicons, tab titles) triggers updateNSView, causing constant AppKit layout churn and visible flicker\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "constraint:no-nsview-observable-churn",
+      "labels": [
+        "Constraint"
+      ],
+      "properties": {
+        "label": "NSViewRepresentable must not retrigger updateNSView on every @Observable change",
+        "scope": "system",
+        "description": "SwiftUI's @Observable tracks all property access. If an NSViewRepresentable reads an @Observable property, any change triggers updateNSView, which is expensive for AppKit-wrapped views.",
+        "source": "platform",
+        "hard": true,
+        "symptom": "Visible flicker and layout thrashing in the browser view on every URL load, favicon fetch, or tab title update",
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:folder-state-replacement",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "Replace planState and agentState objects on folder switch instead of clearing in-place",
+        "scope": "subsystem:folder-management",
+        "trigger": "State from previous folder leaked into new folder after switching",
+        "rationale": "Replacing the objects re-initializes PlanStorageManager with the new folderId. Clearing in-place leaves the wrong storage backend attached and leaks state from the previous folder.",
+        "alternatives": "[{\"option\": \"Clear planState/agentState in-place\", \"rejected_because\": \"Leaves PlanStorageManager pointing at the old folderId, leaking cross-folder state\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "constraint:folder-scoped-storage",
+      "labels": [
+        "Constraint"
+      ],
+      "properties": {
+        "label": "Plan and agent state storage is scoped per folder, not per app session",
+        "scope": "subsystem:folder-management",
+        "description": "Each folder has its own plan storage and agent session. PlanStorageManager binds to a folderId at construction time. Switching folders must fully reset both state objects.",
+        "source": "observed-failure",
+        "hard": true,
+        "symptom": "Plans and agent history from folder A appear in folder B after switching, causing data corruption and user confusion",
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:mic-avcapturesession",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "MicCaptureService uses AVCaptureSession, not AVAudioEngine",
+        "scope": "subsystem:meeting-recorder",
+        "trigger": "CEF audio renderer crash observed when AVAudioEngine ran alongside ScreenCaptureKit",
+        "rationale": "AVCaptureSession sidesteps the Core Audio graph entirely, avoiding the conflict between CEF and SCK. AVAudioEngine modifies the shared graph, which is incompatible.",
+        "alternatives": "[{\"option\": \"AVAudioEngine\", \"rejected_because\": \"Modifies shared Core Audio graph, crashes CEF when SCK is also active. Works fine in isolation but fails in the meeting recorder context.\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "constraint:cef-sck-audio-conflict",
+      "labels": [
+        "Constraint"
+      ],
+      "properties": {
+        "label": "CEF audio renderer crashes if Core Audio graph is modified while SCK runs",
+        "scope": "system",
+        "description": "ScreenCaptureKit and CEF both use Core Audio. Any API that modifies the audio graph (like AVAudioEngine) while both are active causes a crash in CEF's renderer.",
+        "source": "observed-failure",
+        "hard": true,
+        "symptom": "CEF audio renderer crash, immediate, 100% reproducible by starting AVAudioEngine after SCK",
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:mic-before-sck",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "Always start mic capture before system audio (SCK) in meeting recorder",
+        "scope": "subsystem:meeting-recorder",
+        "trigger": "Crash when reversing start order during meeting recorder development",
+        "rationale": "Starting SCK before AVCaptureSession is initialized triggers the same CEF audio crash. Mic-first ensures AVCaptureSession claims its resources before SCK modifies the graph.",
+        "alternatives": "[{\"option\": \"Start SCK first\", \"rejected_because\": \"Crashes CEF audio renderer \\u2014 SCK modifies audio graph before AVCaptureSession is ready\"}, {\"option\": \"Start both concurrently\", \"rejected_because\": \"Race condition leads to same crash intermittently\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "insight:dictation-vs-meeting-mic",
+      "labels": [
+        "Insight"
+      ],
+      "properties": {
+        "label": "VoiceInputService and MicCaptureService are independent mic paths that must not be confused",
+        "scope": "system",
+        "body": "VoiceInputService (AVAudioEngine, 2s chunks) handles inline dictation. MicCaptureService (AVCaptureSession, 5s chunks) handles meeting recording. Both POST to /api/transcribe but are never active simultaneously. VoiceInputService CAN use AVAudioEngine because it never runs during screen capture.",
+        "failure_without": "Engineer attempts to unify the two services into one, or wonders why two services use different audio APIs for the same endpoint. Unifying them reintroduces the CEF/SCK crash during meetings.",
+        "created_at": "2026-04-03T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:cef-for-web-engine",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "Use CEF (Chromium Embedded Framework) instead of WKWebView as the web engine",
+        "scope": "system",
+        "trigger": "Architecture decision during initial browser design \u2014 needed a web engine that supports view reparenting across split panes and tab switches without destroying page state",
+        "rationale": "CEF embeds Chromium as a C++ library, giving full ownership of the NSView hierarchy and renderer process. This is required for the view reparenting pattern (keeping a browser instance alive while swapping it between split panes). WKWebView renders in an Apple-controlled subprocess; its NSView is opaque and cannot be reparented. CEF also provides a Chromium-compatible extension runtime needed for future extension support, and allows deeper JS interop for the AI agent layer.",
+        "alternatives": "[{\"option\": \"WKWebView\", \"rejected_because\": \"Renders in an Apple-controlled process. The NSView it exposes cannot be freely reparented. Switching tabs or creating split panes would destroy and recreate the webview, causing page reload and loss of in-page state. No extension runtime. JS interop is sandboxed.\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "constraint:wkwebview-view-not-reparentable",
+      "labels": [
+        "Constraint"
+      ],
+      "properties": {
+        "label": "WKWebView's NSView cannot be reparented across container changes",
+        "scope": "system",
+        "description": "WKWebView renders in an Apple-controlled subprocess (com.apple.WebKit.WebContent). The NSView it vends is managed by that process and cannot be detached from its original parent and reattached elsewhere in the view hierarchy without destroying the renderer.",
+        "source": "platform",
+        "hard": true,
+        "symptom": "Tab switches and split pane creation destroy and recreate the webview process, causing full page reload and loss of all in-page state (scroll position, form data, JS heap).",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:cef-for-web-engine-enterprise",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "Use CEF to satisfy enterprise DLP, security, proxy, and audit requirements",
+        "scope": "system",
+        "trigger": "Enterprise product requirements demand deep control over browser runtime internals \u2014 network interception, DLP policy enforcement, proxy routing, and a full audit trail of browser activity.",
+        "rationale": "CEF embeds Chromium as a C++ library, granting ownership of the full network stack, renderer process, and request lifecycle. This is the only way to implement: (1) DLP policies that intercept and inspect outbound data at the network layer, (2) a Swift-controlled HTTP proxy over vsock for fine-grained domain whitelisting and API call auditing, (3) enterprise proxy routing, and (4) browser action audit logs. WKWebView runs in an Apple-controlled process and exposes no hooks into the network stack at this level.",
+        "alternatives": "[{\"option\": \"WKWebView\", \"rejected_because\": \"Network stack is Apple-controlled and opaque. No mechanism to intercept requests at the depth required for DLP enforcement, proxy injection, or per-request audit. WKURLSchemeHandler covers custom schemes only \\u2014 it cannot intercept standard HTTPS traffic for inspection.\"}, {\"option\": \"Electron (Chromium via Node)\", \"rejected_because\": \"Electron wraps Chromium but exposes a Node.js IPC boundary, not direct C++ hooks. Runtime-level DLP interception, custom proxy injection, and CEF request callbacks are not available at the same depth as embedding CEF directly.\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "constraint:enterprise-dlp-requires-browser-runtime-control",
+      "labels": [
+        "Constraint"
+      ],
+      "properties": {
+        "label": "Enterprise DLP and audit require ownership of the browser network stack and request lifecycle",
+        "scope": "system",
+        "description": "Enterprise features \u2014 DLP policy enforcement, proxy support with domain whitelisting, and per-request audit logging \u2014 require intercepting and inspecting network traffic at the browser runtime level, below the JS layer. No managed webview API (WKWebView, Android WebView) exposes this.",
+        "source": "user-requirement",
+        "hard": true,
+        "symptom": "DLP policies cannot be enforced, proxy routing cannot be injected, and audit logs have gaps \u2014 the browser becomes a blind spot in enterprise network monitoring.",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:swift-swiftui-native-shell",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "Build the browser shell in Swift 6 + SwiftUI with AppKit interop",
+        "scope": "system",
+        "trigger": "Arc-style browser aesthetic requires NSVisualEffectView vibrancy, frameless NSWindow with repositioned traffic lights, and hardware-accelerated native overlays \u2014 none of which are available outside of AppKit/SwiftUI.",
+        "rationale": "The target UI (persistent vibrancy sidebar, floating web canvas card, custom window chrome) depends on macOS-exclusive APIs: NSVisualEffectView for the blurred sidebar material, NSWindow subclassing to remove the title bar and reposition traffic lights, and NSViewRepresentable bridges to embed AppKit views inside SwiftUI. Swift 6 + SwiftUI provides @Observable for low-overhead reactive state, strict @MainActor concurrency to safely bridge CEF C++ callbacks, and NavigationSplitView for the sidebar/detail split.",
+        "alternatives": "[{\"option\": \"Electron\", \"rejected_because\": \"No access to NSVisualEffectView, NSWindow subclassing, or AppKit APIs. Vibrancy and frameless chrome are non-trivial hacks in Electron that look noticeably non-native and carry significant memory/CPU overhead.\"}, {\"option\": \"Pure AppKit (no SwiftUI)\", \"rejected_because\": \"Significantly more verbose. @Observable and NavigationSplitView provide reactivity and layout that would require manual implementation in pure AppKit. SwiftUI + AppKit interop gets both.\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "constraint:arc-aesthetics-require-appkit",
+      "labels": [
+        "Constraint"
+      ],
+      "properties": {
+        "label": "Arc-style visuals require macOS-exclusive AppKit APIs unavailable in cross-platform toolkits",
+        "scope": "system",
+        "description": "NSVisualEffectView (vibrancy/blur), NSWindow title bar removal, traffic light repositioning, and hardware-composited NSView layering are macOS-only APIs. No cross-platform toolkit exposes them at the fidelity needed for the target aesthetic.",
+        "source": "user-requirement",
+        "hard": true,
+        "symptom": "Sidebar vibrancy effect, frameless window, and custom traffic light layout are absent or visually degraded \u2014 the app looks like a generic cross-platform wrapper rather than a native macOS browser.",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:alpine-vm-over-container",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "Run Python backend in Alpine Linux VM, not a Docker container",
+        "scope": "subsystem:vm-backend",
+        "trigger": "Enterprise security requirement for a genuine process boundary around the AI backend, not just namespace isolation",
+        "rationale": "Docker containers share the host kernel. A compromised or buggy Python process inside a container can exploit kernel vulnerabilities to escape. Apple Virtualization.framework provides a hardware VM boundary with a separate kernel, separate process tree, and vsock-only IPC \u2014 the Python runtime is physically unable to reach the host network or filesystem without an explicit Swift-mediated bridge.",
+        "alternatives": "[{\"option\": \"Docker container\", \"rejected_because\": \"Shares the host kernel. Container escape vulnerabilities are real. Cannot provide the network isolation guarantee (vsock-only) because Docker networking sits on top of the host TCP stack.\"}, {\"option\": \"macOS App Sandbox\", \"rejected_because\": \"Sandboxes the Swift app process, not a separate Python runtime. Python dependencies and agent tools require filesystem and network access patterns that would require broad entitlements, negating the sandbox benefit.\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "constraint:enterprise-vm-process-isolation",
+      "labels": [
+        "Constraint"
+      ],
+      "properties": {
+        "label": "Enterprise security requires a hardware VM boundary around the Python backend, not container isolation",
+        "scope": "subsystem:vm-backend",
+        "description": "The Python backend runs LLM agents and handles sensitive enterprise data. Enterprise security posture requires that a compromise of the Python runtime cannot reach the host OS, user filesystem, or corporate network. This requires a full VM boundary \u2014 kernel-level separation \u2014 not Docker namespace isolation.",
+        "source": "user-requirement",
+        "hard": true,
+        "symptom": "A compromised Python agent process can escape to the host OS, access user files, or make unauthorized network calls \u2014 unacceptable in an enterprise deployment.",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:vsock-only-no-tcp",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "VM has no TCP/IP network \u2014 only vsock to the host Swift process",
+        "scope": "subsystem:vm-backend",
+        "trigger": "Need to guarantee the Python backend cannot make unauthorized outbound network calls",
+        "rationale": "vsock is a host\u2194guest socket that bypasses the guest's network stack entirely. With no ethernet interface and no TCP/IP in the VM, the Python backend physically cannot reach the internet, the corporate network, or any host TCP service. All external network access must be explicitly proxied by the Swift side \u2014 which can enforce domain whitelists and audit every call.",
+        "alternatives": "[{\"option\": \"NAT networking with firewall rules\", \"rejected_because\": \"Firewall rules can be misconfigured or bypassed. A process with network access can attempt connections; whether they succeed depends on rule correctness. vsock-only provides a structural guarantee, not a policy-dependent one.\"}, {\"option\": \"Host-only network adapter\", \"rejected_because\": \"Still a TCP/IP stack inside the VM. The VM could attempt TCP connections to other VMs or host services on the same subnet. vsock is narrower and auditable.\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:two-disk-ro-system-rw-encrypted-data",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "Split VM storage into read-only system.img and LUKS-encrypted read-write mem0.img",
+        "scope": "subsystem:vm-backend",
+        "trigger": "Need to simultaneously guarantee runtime immutability and encrypted persistence of user data (Qdrant vectors, memories)",
+        "rationale": "A single read-write disk cannot provide immutability. A single read-only disk cannot persist user data. Two disks solve both: system.img is read-only (the running Python code cannot modify itself or the OS), mem0.img is writable but LUKS2-encrypted and mounted noexec (data cannot be executed as code). The LUKS key is never stored inside the VM \u2014 it is passed from macOS Keychain via vsock at boot and lives only in kernel memory.",
+        "alternatives": "[{\"option\": \"Single read-write encrypted disk\", \"rejected_because\": \"The Python runtime itself is on the writable partition, so a compromised process could modify its own code or the OS. No immutability guarantee.\"}, {\"option\": \"Single read-only disk with no persistence\", \"rejected_because\": \"Qdrant vector data and user memories cannot survive VM restarts. The AI memory feature requires durable storage.\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "constraint:immutable-runtime-and-encrypted-data-at-rest",
+      "labels": [
+        "Constraint"
+      ],
+      "properties": {
+        "label": "Python runtime must be immutable; user data must be encrypted at rest with key never persisting in VM",
+        "scope": "subsystem:vm-backend",
+        "description": "Enterprise security requires (1) the Python runtime cannot modify itself at runtime, and (2) user data (vectors, memories) is encrypted at rest with a key that a VM-level compromise cannot retrieve. The LUKS key lives only in macOS Keychain and is passed to the VM at boot \u2014 never written to any VM disk.",
+        "source": "user-requirement",
+        "hard": true,
+        "symptom": "A compromised Python process modifies its own code (persistence attack), or user memory data is readable on disk without the Keychain key.",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "insight:dev-direct-python-prod-vm",
+      "labels": [
+        "Insight"
+      ],
+      "properties": {
+        "label": "Dev uses direct Python process on macOS; production uses VM exclusively \u2014 they are not the same code path",
+        "scope": "subsystem:vm-backend",
+        "body": "run_dev.sh launches the Python sidecar as a direct macOS process on TCP :8765. The release build boots an Alpine Linux VM and communicates over vsock. These are structurally different transports. A bug visible in production (vsock, LUKS unlock, VM startup timing) will not reproduce in dev. The dev mode guard is a runtime flag, not a compile-time switch.",
+        "failure_without": "Engineer spends hours debugging a vsock or VM boot issue that is invisible in their dev environment because they are running the direct-Python path without realising it.",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "decision:dev-prod-mode-split",
+      "labels": [
+        "Decision"
+      ],
+      "properties": {
+        "label": "Keep direct Python process for dev, VM-only for production release",
+        "scope": "subsystem:vm-backend",
+        "trigger": "VM boot adds ~5-10 seconds to app startup and requires a 500MB image download; fast iteration in dev requires bypassing this",
+        "rationale": "The VM security model is a production requirement, not a dev requirement. Forcing every dev run through a VM boot/LUKS unlock cycle would make iteration impractically slow. The dev path uses a direct Python process on localhost; the production path uses the VM exclusively. The switch is a runtime detection in the app.",
+        "alternatives": "[{\"option\": \"Always use VM, even in dev\", \"rejected_because\": \"VM boot time (~5-10s), LUKS setup, and image management add significant friction to the dev loop. The security isolation is not needed when running on a developer's own machine.\"}]",
+        "confidence": "high",
+        "created_at": "2026-04-04T00:00:00Z",
+        "service": "service:bowser"
+      }
+    },
+    {
+      "id": "service:bowser",
+      "labels": [
+        "Service"
+      ],
+      "properties": {
+        "label": "Bowser",
+        "repo": "bank/bowser",
+        "description": "macOS native enterprise browser with CEF rendering, AI agent sidecar in Alpine Linux VM, and deep DLP/audit/proxy capabilities",
+        "tech_stack": "[\"swift\", \"swiftui\", \"appkit\", \"cef\", \"chromium\", \"python\", \"alpine-linux\", \"apple-virtualization\", \"qdrant\"]",
+        "domain": "desktop-browser",
+        "platform": "macOS",
+        "created_at": "2026-04-05T00:00:00Z"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "id": "rel-insight-vm-naming-trap-EXPLAINS-constraint-vm-folder-naming",
+      "type": "EXPLAINS",
+      "startNodeId": "insight:vm-folder-naming-trap",
+      "endNodeId": "constraint:vm-folder-naming",
+      "properties": {
+        "edge_context": "The naming collision between VM (Virtual Machine) and VM (ViewModel) is a real onboarding trap. This insight prevents a new engineer from misclassifying the folder's purpose during their first codebase exploration.",
+        "inferred": false,
+        "created_at": "2026-04-03T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-no-mvvm-SHAPED_BY-constraint-explicit-state-ownership",
+      "type": "SHAPED_BY",
+      "startNodeId": "decision:no-mvvm-observable-state-containers",
+      "endNodeId": "constraint:explicit-state-ownership",
+      "properties": {
+        "edge_context": "The constraint requires explicit, traceable state ownership. MVVM introduces ViewModels that own state independently, breaking the single-owner guarantee. @Observable containers passed from AppDelegate satisfy both reactivity and traceability.",
+        "inferred": false,
+        "created_at": "2026-04-03T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-browsercanvas-plain-value-SHAPED_BY-constraint-no-nsview-churn",
+      "type": "SHAPED_BY",
+      "startNodeId": "decision:browsercanvas-plain-value",
+      "endNodeId": "constraint:no-nsview-observable-churn",
+      "properties": {
+        "edge_context": "The constraint makes @Bindable unusable for any NSViewRepresentable wrapping a heavy AppKit view. Plain value is the only way to pass state without enrolling in observation tracking. This pattern applies to all NSViewRepresentables in the app, not just BrowserCanvas.",
+        "inferred": false,
+        "created_at": "2026-04-03T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-folder-state-replacement-SHAPED_BY-constraint-folder-scoped-storage",
+      "type": "SHAPED_BY",
+      "startNodeId": "decision:folder-state-replacement",
+      "endNodeId": "constraint:folder-scoped-storage",
+      "properties": {
+        "edge_context": "The storage backend binds folderId at construction. In-place clearing resets the observable state but leaves the storage backend pointing at the old folder. Full object replacement is the only way to ensure both the observable state and the underlying storage are correctly scoped.",
+        "inferred": false,
+        "created_at": "2026-04-03T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-mic-avcapturesession-SHAPED_BY-constraint-cef-sck-audio-conflict",
+      "type": "SHAPED_BY",
+      "startNodeId": "decision:mic-avcapturesession",
+      "endNodeId": "constraint:cef-sck-audio-conflict",
+      "properties": {
+        "edge_context": "The constraint eliminates AVAudioEngine as an option for any mic capture that runs concurrently with screen recording. AVCaptureSession is the only viable API because it doesn't touch the Core Audio graph.",
+        "inferred": false,
+        "created_at": "2026-04-03T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-mic-before-sck-SHAPED_BY-constraint-cef-sck-audio-conflict",
+      "type": "SHAPED_BY",
+      "startNodeId": "decision:mic-before-sck",
+      "endNodeId": "constraint:cef-sck-audio-conflict",
+      "properties": {
+        "edge_context": "The same CEF/SCK conflict also dictates initialization order, not just API choice. AVCaptureSession must be fully initialized before SCK starts, or the audio graph modification still triggers the crash.",
+        "inferred": false,
+        "created_at": "2026-04-03T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-insight-two-audio-paths-EXPLAINS-decision-mic-avcapturesession",
+      "type": "EXPLAINS",
+      "startNodeId": "insight:dictation-vs-meeting-mic",
+      "endNodeId": "decision:mic-avcapturesession",
+      "properties": {
+        "edge_context": "Without this insight, the existence of two mic services using different APIs looks like accidental duplication. The split is intentional: VoiceInputService can use AVAudioEngine because dictation never runs concurrently with SCK.",
+        "inferred": false,
+        "created_at": "2026-04-03T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-cef-for-web-engine-SHAPED_BY-constraint-wkwebview-view-not-reparentable",
+      "type": "SHAPED_BY",
+      "startNodeId": "decision:cef-for-web-engine",
+      "endNodeId": "constraint:wkwebview-view-not-reparentable",
+      "properties": {
+        "edge_context": "The view reparenting pattern \u2014 keeping a CEF browser instance alive while swapping it between SplitPaneViewController slots \u2014 is architecturally central to Bowser. WKWebView makes this impossible at the platform level. CEF is the only mainstream web engine that gives ownership of the renderer NSView.",
+        "inferred": true,
+        "created_at": "2026-04-04T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-cef-enterprise-SHAPED_BY-constraint-enterprise-dlp-runtime-control",
+      "type": "SHAPED_BY",
+      "startNodeId": "decision:cef-for-web-engine-enterprise",
+      "endNodeId": "constraint:enterprise-dlp-requires-browser-runtime-control",
+      "properties": {
+        "edge_context": "This constraint is the primary architectural driver for CEF. All other benefits of CEF (view reparenting, extension runtime) are secondary. Any future proposal to replace CEF must first show how this constraint is satisfied.",
+        "inferred": false,
+        "created_at": "2026-04-04T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-cef-enterprise-SUPERSEDES-decision-cef-for-web-engine",
+      "type": "SUPERSEDES",
+      "startNodeId": "decision:cef-for-web-engine-enterprise",
+      "endNodeId": "decision:cef-for-web-engine",
+      "properties": {
+        "edge_context": "The original entry captured view reparenting as the primary rationale. The user clarified that the actual primary driver is enterprise DLP, security, and audit requirements. View reparenting is a secondary benefit. This entry supersedes the old one with the correct root cause.",
+        "inferred": false,
+        "created_at": "2026-04-04T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-swift-swiftui-native-shell-SHAPED_BY-constraint-arc-aesthetics-require-appkit",
+      "type": "SHAPED_BY",
+      "startNodeId": "decision:swift-swiftui-native-shell",
+      "endNodeId": "constraint:arc-aesthetics-require-appkit",
+      "properties": {
+        "edge_context": "The Arc-style aesthetic is a core product requirement, not an afterthought. Every AppKit-specific API used in the shell (NSVisualEffectView, FramelessWindow, NSViewRepresentable) exists because this constraint eliminated all cross-platform alternatives at the outset.",
+        "inferred": true,
+        "created_at": "2026-04-04T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-alpine-vm-over-container-SHAPED_BY-constraint-enterprise-vm-process-isolation",
+      "type": "SHAPED_BY",
+      "startNodeId": "decision:alpine-vm-over-container",
+      "endNodeId": "constraint:enterprise-vm-process-isolation",
+      "properties": {
+        "edge_context": "The VM choice is not about performance or packaging convenience \u2014 it is the security boundary. Any proposal to replace the VM with a container must first address the kernel-sharing and network isolation gaps.",
+        "inferred": false,
+        "created_at": "2026-04-04T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-vsock-only-no-tcp-SHAPED_BY-constraint-enterprise-vm-process-isolation",
+      "type": "SHAPED_BY",
+      "startNodeId": "decision:vsock-only-no-tcp",
+      "endNodeId": "constraint:enterprise-vm-process-isolation",
+      "properties": {
+        "edge_context": "vsock-only is the enforcement mechanism for network isolation. The same enterprise constraint that drove the VM choice also drives the no-TCP decision \u2014 the two are inseparable parts of the same security model.",
+        "inferred": false,
+        "created_at": "2026-04-04T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-decision-two-disk-ro-rw-SHAPED_BY-constraint-immutable-runtime-and-encrypted-data",
+      "type": "SHAPED_BY",
+      "startNodeId": "decision:two-disk-ro-system-rw-encrypted-data",
+      "endNodeId": "constraint:immutable-runtime-and-encrypted-data-at-rest",
+      "properties": {
+        "edge_context": "The two-disk split is the structural implementation of two independent security requirements that happen to pull in opposite directions (immutability vs. persistence). Neither requirement can be satisfied with a single disk.",
+        "inferred": false,
+        "created_at": "2026-04-04T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-insight-dev-direct-python-prod-vm-EXPLAINS-decision-dev-prod-mode-split",
+      "type": "EXPLAINS",
+      "startNodeId": "insight:dev-direct-python-prod-vm",
+      "endNodeId": "decision:dev-prod-mode-split",
+      "properties": {
+        "edge_context": "The dev/prod split means some production failure modes \u2014 vsock transport errors, LUKS unlock failures, VM startup races \u2014 are structurally unobservable in the standard dev workflow. Engineers need to know this before assuming dev parity.",
+        "inferred": false,
+        "created_at": "2026-04-04T00:00:00Z"
+      }
+    },
+    {
+      "id": "rel-insight-vm-folder-naming-trap-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "insight:vm-folder-naming-trap",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-constraint-vm-folder-naming-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "constraint:vm-folder-naming",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-no-mvvm-observable-state-containers-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:no-mvvm-observable-state-containers",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-constraint-explicit-state-ownership-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "constraint:explicit-state-ownership",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-browsercanvas-plain-value-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:browsercanvas-plain-value",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-constraint-no-nsview-observable-churn-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "constraint:no-nsview-observable-churn",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-folder-state-replacement-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:folder-state-replacement",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-constraint-folder-scoped-storage-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "constraint:folder-scoped-storage",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-mic-avcapturesession-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:mic-avcapturesession",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-constraint-cef-sck-audio-conflict-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "constraint:cef-sck-audio-conflict",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-mic-before-sck-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:mic-before-sck",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-insight-dictation-vs-meeting-mic-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "insight:dictation-vs-meeting-mic",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-cef-for-web-engine-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:cef-for-web-engine",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-constraint-wkwebview-view-not-reparentable-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "constraint:wkwebview-view-not-reparentable",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-cef-for-web-engine-enterprise-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:cef-for-web-engine-enterprise",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-constraint-enterprise-dlp-requires-browser-runtime-control-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "constraint:enterprise-dlp-requires-browser-runtime-control",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-swift-swiftui-native-shell-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:swift-swiftui-native-shell",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-constraint-arc-aesthetics-require-appkit-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "constraint:arc-aesthetics-require-appkit",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-alpine-vm-over-container-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:alpine-vm-over-container",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-constraint-enterprise-vm-process-isolation-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "constraint:enterprise-vm-process-isolation",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-vsock-only-no-tcp-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:vsock-only-no-tcp",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-two-disk-ro-system-rw-encrypted-data-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:two-disk-ro-system-rw-encrypted-data",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-constraint-immutable-runtime-and-encrypted-data-at-rest-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "constraint:immutable-runtime-and-encrypted-data-at-rest",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-insight-dev-direct-python-prod-vm-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "insight:dev-direct-python-prod-vm",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    },
+    {
+      "id": "rel-decision-dev-prod-mode-split-BELONGS_TO-service-bowser",
+      "type": "BELONGS_TO",
+      "startNodeId": "decision:dev-prod-mode-split",
+      "endNodeId": "service:bowser",
+      "properties": {
+        "created_at": "2026-04-05T00:00:00Z",
+        "inferred": true
+      }
+    }
+  ]
+}

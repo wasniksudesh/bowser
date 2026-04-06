@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "../supercontext"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"workbench.tree.indent": 28
+	}
+}

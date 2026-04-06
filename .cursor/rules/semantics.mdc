@@ -1,202 +1,215 @@
 ---
-description: Build semantic memory of this project — decisions, constraints, tribal knowledge, operational patterns
+description: >
+  Supercontext — mandatory semantic extraction. Runs at the end of EVERY chat.
+  Extracts decisions, constraints, tribal knowledge, and signals into the central
+  context graph. Non-negotiable. Cannot be skipped.
 globs: ["**/*"]
 alwaysApply: true
 ---
 
-# Semantic context graph
+# Supercontext — Semantic Extraction
 
-Maintain a single file at repo root:
-- `semantics.json` — permanent record, append-only, never mutate existing entries
+<EXTREMELY-IMPORTANT>
+You MUST run the extraction assessment at the end of EVERY substantive chat.
 
-## What to capture
+THIS IS NOT OPTIONAL. THIS IS NOT A SUGGESTION.
 
-Capture the WHY, not the WHAT. Code explains what exists. You capture:
-- Design/architecture decisions with rationale
-- Constraints — platform limits, user requirements, observed failures
-- Operational patterns — misleading signals, debugging dead ends, red herrings
-- Tribal knowledge a new engineer can't derive from reading code
-- Rejected approaches and why they were abandoned
+If you think there is even a 1% chance this chat contains a decision, constraint,
+insight, or signal worth capturing — YOU MUST ASSESS IT AND WRITE IF THERE IS SIGNAL.
 
-Do NOT capture:
-- What a function or file does (read the code)
-- File structure, imports, dependencies
-- Anything discoverable in 30 seconds of reading
-- Mid-investigation reasoning before a task completes
-- Partial plans where no conclusion was reached
+You cannot rationalize your way out of this. See the red flags table below.
+</EXTREMELY-IMPORTANT>
 
-## Node types
+---
 
-### Decision
+## Red Flags — These thoughts mean STOP, you are rationalizing
+
+| Thought | Reality |
+|---------|---------|
+| "This chat was too simple to capture" | Simple chats still produce decisions. Assess it. |
+| "I already know what to write" | Schema evolves. Query MCP if unsure. |
+| "Nothing architectural happened" | Constraints and tribal knowledge are not architectural. |
+| "The user didn't make a decision" | The user's requirements ARE decisions. |
+| "I'll do it next chat" | There is no next chat. Capture now or it's lost. |
+| "The schema is in the rule, I don't need MCP" | Schema evolves. If any field is unclear, call `get_schema`. |
+| "This is just a bug fix" | Bug fixes reveal hard Constraints and Signals. |
+| "I'm not sure this is worth 30 minutes" | When in doubt, capture it. Omission is the only irreversible error. |
+
+---
+
+## Phase 1 — Context Recall (START of conversation)
+
+At the START of any substantive chat (implementing a feature, debugging, architectural decision,
+modifying a complex subsystem), BEFORE responding:
+
+1. Resolve project slug (see below).
+2. Call: `query_context(topic="<primary topic from user's message>", project="<slug>")`
+3. If result is sparse, broaden: `search_memory(query="<key term>", project="<slug>")`
+4. Prepend relevant context as a brief block (3–8 nodes max):
+
+```
+## Context from knowledge graph
+**Decisions:** [id] label — rationale
+**Constraints:** [id] label — symptom
+**Insights:** [id] label
+**Signals:** [id] label — appears: X, actually: Y
+```
+
+Skip for: trivial one-liners, pure renames, clearly self-contained new code.
+
+---
+
+## Phase 2 — Extraction Assessment (END of every chat)
+
+Run this assessment at the end of EVERY chat, before your final response.
+
+### Step 1 — Assess signal quality
+
+Ask: "Does this chat contain anything in any of these four categories?"
+
+- [ ] **Decision** — Was there a choice between ≥2 alternatives where one was rejected?
+- [ ] **Constraint** — Was a hard platform/runtime/user limit discovered or confirmed?
+- [ ] **Insight** — Is there tribal knowledge that would waste 30+ min without it?
+- [ ] **Signal** — Was a symptom identified that appears to mean X but actually means Y?
+
+**If none of the above**: write nothing. State: "No semantic signal in this chat."
+
+**If any of the above**: proceed to Step 2.
+
+### Step 2 — Resolve project slug
+
+```
+1. Read service.json at repo root → use the "id" field
+2. If not present → use the repo directory name (basename of workspace path)
+```
+
+Target file: `~/.context-graph/projects/<slug>/semantics.json`
+
+### Step 3 — Check schema (if unsure about any field or node type)
+
+**If you are unsure about any field name, required fields, node type, or relationship type**:
+
+```
+get_schema()
+```
+
+This returns the live schema from the Supercontext MCP server. Use it. Do not guess.
+Do not rely on the schema embedded in this rule — it may be outdated. The MCP server
+is the source of truth for the current schema.
+
+### Step 4 — Check for duplicates
+
+For each candidate node, call before creating:
+
+```
+search_memory(query="<candidate label or topic>", project="<slug>")
+```
+
+If a matching node exists: reference its `id` in the relationship. Do not duplicate.
+
+### Step 5 — Generate entries
+
+One JSON entry per relationship. Each entry embeds both nodes fully.
+
+**Entry format:**
 ```json
 {
-  "id": "decision:<slug>",
-  "type": "Decision",
-  "label": "",
-  "scope": "system | subsystem:<name> | module:<name>",
-  "trigger": "",
-  "rationale": "",
-  "alternatives": [
-    { "option": "", "rejected_because": "" }
-  ],
-  "confidence": "high | medium | low",
-  "uncertainty": "",
-  "created_at": ""
+  "id": "rel-<from-slug>-<REL>-<to-slug>",
+  "created_at": "<ISO8601>",
+  "from": {
+    "id": "<type>:<slug>",
+    "type": "Decision | Constraint | Insight | Signal",
+    "label": "<short label>",
+    "scope": "system | subsystem:<name> | module:<name>",
+    "source_chat": "<cursor-chat-uuid-or-omit>",
+    ...type-specific fields...
+  },
+  "rel": "SHAPED_BY | SUPERSEDES | ABANDONED | EXPLAINS | CONTRADICTS | LIFTED | CAUSES",
+  "to": { ...full node... },
+  "properties": {
+    "edge_context": "<1-2 sentences why this relationship exists, readable from either direction>",
+    "inferred": false
+  }
 }
 ```
-Mandatory: `label`, `scope`, `trigger`, `rationale`, `alternatives` (≥1), `confidence`.
-`uncertainty` required when confidence is not `high`.
-Gate: "Was there a choice between alternatives?" No alternatives = not a decision.
 
-### Constraint
-```json
-{
-  "id": "constraint:<slug>",
-  "type": "Constraint",
-  "label": "",
-  "scope": "system | subsystem:<name> | module:<name>",
-  "description": "",
-  "source": "platform | observed-failure | user-requirement | api-limitation | performance | business-rule | legal | environment | dependency | organizational | plan",
-  "hard": true,
-  "symptom": "",
-  "created_at": ""
-}
+**Type-specific required fields** (call `get_schema()` if any field is unclear):
+
+| Type | Required fields |
+|------|----------------|
+| Decision | `label`, `scope`, `trigger`, `rationale`, `alternatives` (≥1 with `rejected_because`), `confidence` |
+| Constraint | `label`, `scope`, `description`, `source`, `hard`, `symptom` (if `hard: true`) |
+| Insight | `label`, `scope`, `body`, `failure_without` (concrete failure mode) |
+| Signal | `label`, `scope`, `observation`, `appears_to_mean`, `actually_means`, `conditions`, `evidence` |
+
+**Every entry must have `edge_context`.** Empty `edge_context` = entry is invalid.
+
+### Step 6 — Write to semantics.json
+
 ```
-Mandatory: `label`, `scope`, `description`, `source` (from enum), `hard`.
-`symptom` required when `hard: true` — what breaks if violated.
-Gate: "Is this imposed on us, not chosen by us?" If it was a choice, it's a Decision.
-
-### Insight
-```json
-{
-  "id": "insight:<slug>",
-  "type": "Insight",
-  "label": "",
-  "scope": "system | subsystem:<name> | module:<name>",
-  "body": "",
-  "failure_without": "",
-  "created_at": ""
-}
+Target: ~/.context-graph/projects/<slug>/semantics.json
 ```
-Mandatory: `label`, `scope`, `body`, `failure_without`.
-`failure_without` must state a concrete failure mode ("engineer wastes N hours on X").
-Gate: "Would someone be fooled or waste significant time without this?" If not, don't write it.
 
-### Signal
-```json
-{
-  "id": "signal:<slug>",
-  "type": "Signal",
-  "label": "",
-  "scope": "system | subsystem:<name> | module:<name>",
-  "observation": "",
-  "appears_to_mean": "",
-  "actually_means": "",
-  "conditions": "",
-  "evidence": "",
-  "created_at": ""
-}
+- If exists: read → parse JSON array → append new entries → write back
+- If not exists: create with `[]`, then append
+
+**APPEND ONLY. NEVER mutate existing entries.**
+
+To correct a past decision: add a new SUPERSEDES entry. Old entry stays.
+
+### Step 7 — Confirm
+
+Always report what was written (or why nothing was written):
+
 ```
-Mandatory: `label`, `scope`, `observation`, `appears_to_mean`, `actually_means`, `conditions`, `evidence`.
-Gate: "Has someone been fooled by this, or would they be?" If the interpretation is obvious, don't write it.
-Use for: operational debugging patterns, misleading metrics, red herrings, alert noise.
+Semantic extraction: wrote N entries to ~/.context-graph/projects/<slug>/semantics.json
+  [Decision] <label>  --SHAPED_BY-->  [Constraint] <label>
+  ...
+```
 
-All IDs are deterministic slugs. All `created_at` are ISO8601.
+Or:
+
+```
+Semantic extraction: no signal in this chat (trivial fix / no conclusion reached / etc.)
+```
+
+---
+
+## When NOT to write (hard gates)
+
+NEVER write when:
+- Chat ended without a conclusion (investigation still open)
+- User explicitly corrected your reasoning mid-chat (discard pre-correction analysis)
+- Build/tests failed and were NOT resolved
+- The "decision" had no real alternatives — it was the only obvious path
+
+---
 
 ## Relationship types
 
 | Relationship | Direction | When to use |
 |---|---|---|
 | SHAPED_BY | Decision → Constraint | Constraint forced/influenced this decision |
-| SUPERSEDES | Decision → Decision | New replaces old (old stays, new points back) |
-| ABANDONED | Decision → Decision | Explicitly considered and rejected |
-| EXPLAINS | Insight → Decision\|Constraint\|Signal | Tribal knowledge that clarifies the target |
+| SUPERSEDES | Decision → Decision | New decision replaces old (old entry stays) |
+| ABANDONED | Decision → Decision | Approach explicitly considered and rejected |
+| EXPLAINS | Insight → Decision\|Constraint\|Signal | Tribal knowledge that clarifies the node |
 | CONTRADICTS | Constraint → Constraint | Two constraints are in tension |
 | LIFTED | Constraint → Decision | Constraint removed, enabling new decision |
 | CAUSES | Constraint\|Signal → Constraint\|Signal | Runtime causal chain |
 
-## Entry format
+---
 
-```json
-{
-  "id": "rel-<from-slug>-<REL>-<to-slug>",
-  "created_at": "",
-  "from": { ...full node },
-  "rel": "...",
-  "to": { ...full node },
-  "properties": {
-    "edge_context": "",
-    "inferred": true | false
-  }
-}
-```
-`edge_context` is REQUIRED — one or two sentences explaining why this relationship exists, readable from either direction.
-`inferred` — true if derived from code analysis; false if user stated explicitly.
-Nodes are embedded fully so each entry is self-contained.
+## Graph health (apply when generating entries)
 
-## When to write
+- Each node ≤ 5 direct edges — decompose if exceeded
+- Prefer chains (Architectural → Implementation → Tactical) over stars
+- No orphan nodes — every node must have ≥1 relationship
+- `module:X` nodes connect to `subsystem` before connecting to `system`
 
-Write to `semantics.json` ONLY when ALL of these are true:
-1. Task completed — code applied, conclusion reached, or user accepted reasoning
-2. Quality bar met — all mandatory fields populated, edge_context meaningful
-3. Worth capturing — would save a new engineer 30+ minutes of confusion
-
-NEVER write:
-- Mid-investigation before reaching a conclusion
-- When user corrected your reasoning (discard pre-correction analysis)
-- When build/tests failed on your change
-- Speculatively ("this might be important")
-
-If a chat ends without task completion, nothing is written.
-
-## Capture sources
-
-| Source | Produces | When |
-|---|---|---|
-| Code analysis | Decision, Constraint | During implementation in agent mode |
-| User conversation | Constraint, Decision | User states requirements or priorities |
-| Cursor Plans | Constraint, Decision | Goals, constraints, behavioral expectations |
-| MCP tool use (debugging) | Signal, Constraint, Insight | During incident analysis |
-| MCP tool use (data analysis) | Signal, Insight | Querying metrics, databases, logs |
-| Build/test failures | Constraint | Observed failure reveals hard constraint |
-| Git history analysis | Decision (SUPERSEDES) | Reading past changes reveals prior decisions |
-
-## Graph health rules
-
-### Fan-out cap
-Each node should have ≤ 5 direct edges. If a node exceeds 5, decompose by introducing an intermediate decision node that groups a subset of edges.
-
-### Decision layering
-Prefer chains over stars. Three layers, each answering one question:
-
-| Layer | Question | Example |
-|---|---|---|
-| Architectural | "What strategy?" | "Isolate mic from Core Audio graph" |
-| Implementation | "What specific choice?" | "Use AVCaptureSession" |
-| Tactical | "What workaround?" | "Start mic before SCK" |
-
-### Scope consistency
-Edges should stay within scope or go one level up. `module:X` connecting directly to `system`-level node = insert `subsystem` intermediate.
-
-### Orphan prohibition
-Every node must have at least one relationship. Zero-edge nodes are noise.
-
-### Reuse before creating
-Before creating a new node, check existing nodes in `semantics.json`. If a matching node exists, reference it by ID.
+---
 
 ## Correcting past entries
 
-`semantics.json` is append-only. To correct:
-- Wrong decision → add SUPERSEDES pointing to old decision. New entry's `trigger` explains what changed.
-- Lifted constraint → add LIFTED from constraint to the decision it now enables.
-- Old entries stay for historical context.
-
-## Quality bar
-
-Every Decision needs `rationale` and ≥1 alternative with `rejected_because`.
-Every ABANDONED needs rejection reason in `edge_context`.
-Every hard Constraint needs `symptom`.
-Every Insight needs `failure_without`.
-Every Signal needs `appears_to_mean` vs `actually_means`.
-Every relationship needs `edge_context`.
-If it wouldn't help a new engineer, don't write it.
+`semantics.json` is append-only:
+- Wrong decision → add SUPERSEDES (new entry, trigger explains what changed)
+- Lifted constraint → add LIFTED from constraint to the decision it now enables

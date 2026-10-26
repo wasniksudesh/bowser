@@ -5,9 +5,6 @@
 Bowser OS Style : 
 https://github.com/user-attachments/assets/bf60615c-bfaa-480b-853d-400727383984
 
-Feature Set : 
-https://github.com/user-attachments/assets/894bef37-2acb-45af-a98f-8662634050e7
-
 Dock : 
 https://github.com/user-attachments/assets/5aab15db-1358-472c-bcd2-5b9879e3346e
 

@@ -1,5 +1,10 @@
 # Bowser
 
+## DEMO 
+
+https://github.com/user-attachments/assets/bf60615c-bfaa-480b-853d-400727383984
+
+
 A high-performance macOS browser shell built with a native hybrid architecture:
 
 - **Swift 6.2 + SwiftUI** — Modern UI with NavigationSplitView, @Observable, and strict concurrency
